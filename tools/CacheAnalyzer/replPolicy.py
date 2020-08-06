@@ -74,6 +74,7 @@ def main():
    parser.add_argument("-lRandSeq", help="Length of random sequences (default: 50)", type=int, default=50)
    parser.add_argument("-logLevel", help="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default='WARNING')
    parser.add_argument("-output", help="Output file name", default='replPolicy.html')
+   parser.add_argument("-adb", help="Use ADB to measure external device", action='store_true')
    args = parser.parse_args()
 
    logging.basicConfig(stream=sys.stdout, format='%(message)s', level=logging.getLevelName(args.logLevel))
@@ -97,7 +98,11 @@ def main():
    if args.cBox:
       cBox = args.cBox
 
-   title = cpuid.cpu_name(cpuid.CPUID()) + ', Level: ' + str(args.level) + (', CBox: ' + str(cBox) if args.cBox else '')
+   if args.adb:
+      global ADB_USING
+      ADB_USING = True
+
+   title = cpuid.cpu_name(cpuid.CPUID(ADB_USING)) + ', Level: ' + str(args.level) + (', CBox: ' + str(cBox) if args.cBox else '')
 
    html = ['<html>', '<head>', '<title>' + title + '</title>', '</head>', '<body>']
    html += ['<h3>' + title + '</h3>']

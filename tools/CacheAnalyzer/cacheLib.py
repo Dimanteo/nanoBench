@@ -17,6 +17,7 @@ import cpuid
 import logging
 log = logging.getLogger(__name__)
 
+ADB_USING = False
 
 def getEventConfig(event):
    arch = getArch()
@@ -90,19 +91,19 @@ class CacheInfo:
 
 def getArch():
    if not hasattr(getArch, 'arch'):
-      cpu = cpuid.CPUID()
+      cpu = cpuid.CPUID(ADB_USING)
       getArch.arch = cpuid.micro_arch(cpu)
    return getArch.arch
 
 def getCPUVendor():
    if not hasattr(getCPUVendor, 'vendor'):
-      cpu = cpuid.CPUID()
+      cpu = cpuid.CPUID(ADB_USING)
       getCPUVendor.vendor = cpuid.cpu_vendor(cpu)
    return getCPUVendor.vendor
 
 def getCpuidCacheInfo():
    if not hasattr(getCpuidCacheInfo, 'cpuidCacheInfo'):
-      cpu = cpuid.CPUID()
+      cpu = cpuid.CPUID(ADB_USING)
       log.debug(cpuid.get_basic_info(cpu))
       getCpuidCacheInfo.cpuidCacheInfo = cpuid.get_cache_info(cpu)
 
@@ -213,15 +214,25 @@ def getPointerChasingInit(addresses):
    #random.shuffle(addresses_tail)
    #adresses = [addresses[0]] + addresses_tail
 
-   init = 'lea RAX, [R14+' + str(addresses[0]) + ']; '
-   init += 'mov RBX, RAX; '
+   init = ''
+   if not ADB_USING:
+      init = 'lea RAX, [R14+' + str(addresses[0]) + ']; '
+      init += 'mov RBX, RAX; '
+   else:
+      init = 'mov x1, x14; add x0, x1, x14; add x0, x0, #' + str(addresses[0]) + '; '
+      init += 'mov x1, x0'
 
    i = 0
    while i < len(addresses)-1:
       stride = addresses[i+1] - addresses[i]
-      init += '1: add RBX, ' + str(stride) + '; '
-      init += 'mov [RAX], RBX; '
-      init += 'mov RAX, RBX; '
+      if not ADB_USING:
+         init += '1: add RBX, ' + str(stride) + '; '
+         init += 'mov [RAX], RBX; '
+         init += 'mov RAX, RBX; '
+      else:
+         init += '1: add x1, x1, #' + str(stride) + '; '
+         init += 'str x1, [x0]; '
+         init += 'mov x0, x1; '
 
       i += 1
       oldI = i
@@ -230,11 +241,19 @@ def getPointerChasingInit(addresses):
          i += 1
 
       if oldI != i:
-         init += 'lea RCX, [R14+' + str(addresses[i]) + ']; '
-         init += 'cmp RAX, RCX; '
-         init += 'jne 1b; '
+         if not ADB_USING:
+            init += 'lea RCX, [R14+' + str(addresses[i]) + ']; '
+            init += 'cmp RAX, RCX; '
+            init += 'jne 1b; '
+         else:
+            init += 'mov x2, x14; add x2, x2, #' + str(addresses[i]) + '; '
+            init += 'cmp x0, x2; '
+            init += 'bne 1b; '
 
-   init += 'mov qword ptr [R14 + ' + str(addresses[-1]) + '], 0; '
+   if not ADB_USING:
+      init += 'mov qword ptr [R14 + ' + str(addresses[-1]) + '], 0; '
+   else:
+      init += 'eor x0, x0, x0; str x0, [x14, #' + str(addresses[-1]) + ']; '
    pointerChasingInits[tuple(addresses)] = init
    return init
 
@@ -261,7 +280,10 @@ def getCodeForAddressLists(codeAddressLists, initAddressLists=[], wbinvd=False, 
          if addressList.wbinvd:
             if addressList.exclude and pfcEnabled:
                codeList.append(PFC_STOP_ASM + '; ')
-            codeList.append('wbinvd; ')
+            if not ADB_USING:
+               codeList.append('wbinvd; ')
+            else:
+               pass # TODO entire cache clean
             if addressList.exclude and pfcEnabled:
                codeList.append(PFC_START_ASM + '; ')
             continue
@@ -282,21 +304,32 @@ def getCodeForAddressLists(codeAddressLists, initAddressLists=[], wbinvd=False, 
                pfcEnabled = True
 
          # use multiple lfence instructions to make sure that the block is actually in the cache and not still in a fill buffer
-         codeList.append('lfence; ' * 25)
+         if not ADB_USING:
+            codeList.append('lfence; ' * 25)
+         else:
+            codeList.append('dsb sy; ')
 
          if addressList.flush:
             for address in addresses:
-               codeList.append('clflush [R14 + ' + str(address) + ']; ' + afterEveryAcc)
+               if not ADB_USING:
+                  codeList.append('clflush [R14 + ' + str(address) + ']; ' + afterEveryAcc)
+               else:
+                  codeList.append('add x2, x14, #' + str(address) + '; dc cvau, x2; ' + afterEveryAcc)
          else:
             if len(addresses) == 1:
-               codeList.append('mov RCX, [R14 + ' + str(addresses[0]) + ']; ')
+               if not ADB_USING:
+                  codeList.append('mov RCX, [R14 + ' + str(addresses[0]) + ']; ')
+               else:
+                  codeList.append('ldr x2, [x14, ' + str(addresses[0]) + ']; ')
             else:
                if not tuple(addresses) in alreadyAddedOneTimeInits:
                   oneTimeInit.append(getPointerChasingInit(addresses))
                   alreadyAddedOneTimeInits.add(tuple(addresses))
 
-               codeList.append('lea RCX, [R14+' + str(addresses[0]) + ']; 1: mov RCX, [RCX]; ' + afterEveryAcc + 'jrcxz 2f; jmp 1b; 2: ')
-
+               if not ADB_USING:
+                  codeList.append('lea RCX, [R14+' + str(addresses[0]) + ']; 1: mov RCX, [RCX]; ' + afterEveryAcc + 'jrcxz 2f; jmp 1b; 2: ')
+               else:
+                  codeList.append('mov x2, x14; add x2, x2, #' + str(addresses[0]) + '; 1: ldr x2, [x2]; ' + afterEveryAcc + 'cbz x2, 2f; b 1b; 2: ')
       if not isInit and not pfcEnabled:
          codeList.append(PFC_START_ASM + '; ')
 
@@ -358,7 +391,7 @@ def getAddresses(level, wayID, cacheSetList, cBox=1, cSlice=0):
    lineSize = getCacheInfo(1).lineSize
 
    if level <= 2 or (level == 3 and getCacheInfo(3).nSlices is None):
-      nSets = getCacheInfo(level).nSets
+      nSets = getCacheInfo(level).nSets      # unused variable ?
       waySize = getCacheInfo(level).waySize
       return [(wayID*waySize) + s*lineSize for s in cacheSetList]
    elif level == 3:

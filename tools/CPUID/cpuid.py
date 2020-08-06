@@ -89,7 +89,13 @@ class CPUID_struct(ctypes.Structure):
     _fields_ = [(r, c_uint32) for r in ("eax", "ebx", "ecx", "edx")]
 
 class CPUID(object):
-    def __init__(self):
+    def __init__(self, use_adb):
+        # Measurements performed on external device.
+        # TODO call ADB cpuid hadler
+        self.use_adb = use_adb
+        # return
+
+        # Measurments on current x86 based machine
         if platform.machine() not in ("AMD64", "x86_64", "x86", "i686"):
             raise SystemError("Only available for x86")
 
@@ -156,16 +162,23 @@ class CPUID(object):
             self.libc.free(self.addr)
 
 def cpu_vendor(cpu):
+    if cpu.use_adb:
+        return "Arm Limited"
     _, b, c, d = cpu(0)
     return str(struct.pack("III", b, d, c).decode("ascii"))
 
 def cpu_name(cpu):
+    if cpu.use_adb:
+        return "Exynos 9810"
     return " ".join(str("".join((struct.pack("IIII", *cpu(0x80000000 + i)).decode("ascii")
             for i in range(2, 5))).replace('\x00', '')).split())
 
 VersionInfo = collections.namedtuple('VersionInfo', 'displ_family displ_model stepping')
 
 def version_info(cpu):
+   if cpu.use_adb:
+      return VersionInfo(0, 0 , 0)   # TODO family, model, stepping
+
    a, _, _, _ = cpu(0x01)
 
    family_ID = (a >> 8) & 0xF
@@ -185,6 +198,8 @@ def version_info(cpu):
 def micro_arch(cpu):
    vi = version_info(cpu)
 
+   if (vi.displ_family, vi.displ_model) in [(0, 0)]:  # TODO family, model
+      return "Cortex-A55"
    if (vi.displ_family, vi.displ_model) in [(0x06, 0x0F)]:
       return 'Core'
    if (vi.displ_family, vi.displ_model) in [(0x06, 0x17)]:
@@ -515,6 +530,22 @@ def get_cache_info(cpu):
          'lineSize': L3LineSize,
          'nSets': L3Size*1024/L3Assoc/L3LineSize,
          'assoc': L3Assoc
+      }
+   elif vendor == "Arm Limited":
+      cacheInfo['L1I'] = {
+         'lineSize' : 64,       # Not documented
+         'nSets'    : 1024,     # Size / assoc / lineSize
+         'assoc'    : 2
+      }
+      cacheInfo['LD1'] = {
+         'lineSize' : 64,
+         'nSets'    : 512,
+         'assoc'    : 4
+      }
+      cacheInfo['L2'] = {
+         'lineSize' : 64,
+         'nSets'    : 256,
+         'assoc'    : 16
       }
 
    return cacheInfo
