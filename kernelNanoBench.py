@@ -3,8 +3,11 @@ import collections
 import subprocess
 import sys
 
+import adbNanoBench as ADB
+
 PFC_START_ASM = '.quad 0xE0b513b1C2813F04'
 PFC_STOP_ASM = '.quad 0xF0b513b1C2813F04'
+USING_ADB = False
 
 def writeFile(fileName, content):
    with open(fileName, 'w') as f:
@@ -54,7 +57,10 @@ paramDict = dict()
 # Otherwise, reset() needs to be called first.
 def setNanoBenchParameters(config=None, configFile=None, msrConfig=None, msrConfigFile=None, nMeasurements=None, unrollCount=None, loopCount=None,
                            warmUpCount=None, initialWarmUpCount=None, alignmentOffset=0, codeOffset=0, aggregateFunction=None, basicMode=None, noMem=None,
-                           verbose=None):
+                           verbose=None, using_adb=False):
+   global USING_ADB
+   USING_ADB = using_adb
+
    if not ramdiskCreated: createRamdisk()
 
    if config is not None:
@@ -62,7 +68,7 @@ def setNanoBenchParameters(config=None, configFile=None, msrConfig=None, msrConf
          configFile = '/tmp/ramdisk/config'
          writeFile(configFile, config)
          paramDict['config'] = config
-   if configFile is not None:
+   if configFile is not None and not using_adb:
       writeFile('/sys/nb/config', configFile)
 
    if msrConfig is not None:
@@ -70,67 +76,79 @@ def setNanoBenchParameters(config=None, configFile=None, msrConfig=None, msrConf
          msrConfigFile = '/tmp/ramdisk/msr_config'
          writeFile(msrConfigFile, msrConfig)
          paramDict['msrConfig'] = msrConfig
-   if msrConfigFile is not None:
+   if msrConfigFile is not None and not using_adb:
       writeFile('/sys/nb/msr_config', msrConfigFile)
 
    if nMeasurements is not None:
       if paramDict.get('nMeasurements', None) != nMeasurements:
-         writeFile('/sys/nb/n_measurements', str(nMeasurements))
+         if not using_adb:
+            writeFile('/sys/nb/n_measurements', str(nMeasurements))
          paramDict['nMeasurements'] = nMeasurements
 
    if unrollCount is not None:
       if paramDict.get('unrollCount', None) != unrollCount:
-         writeFile('/sys/nb/unroll_count', str(unrollCount))
+         if not using_adb:
+            writeFile('/sys/nb/unroll_count', str(unrollCount))
          paramDict['unrollCount'] = unrollCount
 
    if loopCount is not None:
       if paramDict.get('loopCount', None) != loopCount:
-         writeFile('/sys/nb/loop_count', str(loopCount))
+         if not using_adb:
+            writeFile('/sys/nb/loop_count', str(loopCount))
          paramDict['loopCount'] = loopCount
 
    if warmUpCount is not None:
       if paramDict.get('warmUpCount', None) != warmUpCount:
-         writeFile('/sys/nb/warm_up', str(warmUpCount))
+         if not using_adb:
+            writeFile('/sys/nb/warm_up', str(warmUpCount))
          paramDict['warmUpCount'] = warmUpCount
 
    if initialWarmUpCount is not None:
       if paramDict.get('initialWarmUpCount', None) != initialWarmUpCount:
-         writeFile('/sys/nb/initial_warm_up', str(initialWarmUpCount))
+         if not using_adb:
+            writeFile('/sys/nb/initial_warm_up', str(initialWarmUpCount))
          paramDict['initialWarmUpCount'] = initialWarmUpCount
 
    if alignmentOffset is not None:
       if paramDict.get('alignmentOffset', None) != alignmentOffset:
-         writeFile('/sys/nb/alignment_offset', str(alignmentOffset))
+         if not using_adb:            
+            writeFile('/sys/nb/alignment_offset', str(alignmentOffset))
          paramDict['alignmentOffset'] = alignmentOffset
 
    if codeOffset is not None:
       if paramDict.get('codeOffset', None) != codeOffset:
-         writeFile('/sys/nb/code_offset', str(codeOffset))
+         if not using_adb:
+            writeFile('/sys/nb/code_offset', str(codeOffset))
          paramDict['codeOffset'] = codeOffset
 
    if aggregateFunction is not None:
       if paramDict.get('aggregateFunction', None) != aggregateFunction:
-         writeFile('/sys/nb/agg', aggregateFunction)
+         if not using_adb:
+            writeFile('/sys/nb/agg', aggregateFunction)
          paramDict['aggregateFunction'] = aggregateFunction
 
    if basicMode is not None:
       if paramDict.get('basicMode', None) != basicMode:
-         writeFile('/sys/nb/basic_mode', str(int(basicMode)))
+         if not using_adb:
+            writeFile('/sys/nb/basic_mode', str(int(basicMode)))
          paramDict['basicMode'] = basicMode
 
    if noMem is not None:
       if paramDict.get('noMem', None) != noMem:
-         writeFile('/sys/nb/no_mem', str(int(noMem)))
+         if not using_adb:
+            writeFile('/sys/nb/no_mem', str(int(noMem)))
          paramDict['noMem'] = noMem
 
    if verbose is not None:
       if paramDict.get('verbose', None) != verbose:
-         writeFile('/sys/nb/verbose', str(int(verbose)))
+         if not using_adb:
+            writeFile('/sys/nb/verbose', str(int(verbose)))
          paramDict['verbose'] = verbose
 
 
 def resetNanoBench():
-   with open('/sys/nb/reset') as resetFile: resetFile.read()
+   if not USING_ADB:
+      with open('/sys/nb/reset') as resetFile: resetFile.read()
    paramDict.clear()
 
 
@@ -139,37 +157,60 @@ def runNanoBench(code='', codeObjFile=None, codeBinFile=None,
                  init='', initObjFile=None, initBinFile=None,
                  oneTimeInit='', oneTimeInitObjFile=None, oneTimeInitBinFile=None):
    if not ramdiskCreated: createRamdisk()
-   with open('/sys/nb/clear') as clearFile: clearFile.read()
+   if not USING_ADB:
+      with open('/sys/nb/clear') as clearFile: clearFile.read()
 
    if code:
       codeObjFile = '/tmp/ramdisk/code.o'
       assemble(code, codeObjFile)
    if codeObjFile is not None:
       objcopy(codeObjFile, '/tmp/ramdisk/code.bin')
-      writeFile('/sys/nb/code', '/tmp/ramdisk/code.bin')
+      if not USING_ADB:
+         writeFile('/sys/nb/code', '/tmp/ramdisk/code.bin')
+      else:
+         ADB.push('/tmp/ramdisk/code.bin', ADB.TMPDIR)
    elif codeBinFile is not None:
-      writeFile('/sys/nb/code', codeBinFile)
+      if not USING_ADB:
+         writeFile('/sys/nb/code', codeBinFile)
+      else:
+         ADB.push(codeBinFile, ADB.TMPDIR + 'code')
 
    if init:
       initObjFile = '/tmp/ramdisk/init.o'
       assemble(init, initObjFile)
    if initObjFile is not None:
       objcopy(initObjFile, '/tmp/ramdisk/init.bin')
-      writeFile('/sys/nb/init', '/tmp/ramdisk/init.bin')
+      if not USING_ADB:
+         writeFile('/sys/nb/init', '/tmp/ramdisk/init.bin')
+      else:
+         ADB.push('/tmp/ramdisk/init.bin', ADB.TMPDIR + 'init')
    elif initBinFile is not None:
-      writeFile('/sys/nb/init', initBinFile)
+      if not USING_ADB:
+         writeFile('/sys/nb/init', initBinFile)
+      else:
+         ADB.push(initBinFile, ADB.TMPDIR + 'init')
 
    if oneTimeInit:
       oneTimeInitObjFile = '/tmp/ramdisk/one_time_init.o'
       assemble(oneTimeInit, oneTimeInitObjFile)
    if oneTimeInitObjFile is not None:
       objcopy(oneTimeInitObjFile, '/tmp/ramdisk/one_time_init.bin')
-      writeFile('/sys/nb/one_time_init', '/tmp/ramdisk/one_time_init.bin')
-   elif oneTimeInitBinFile is not None:
-      writeFile('/sys/nb/one_time_init', oneTimeInitBinFile)
+      if not USING_ADB:
+         writeFile('/sys/nb/one_time_init', '/tmp/ramdisk/one_time_init.bin')
+      else:
+         ADB.push('/tmp/ramdisk/one_time_init.bin', ADB.TMPDIR + 'one_time_init')
+   elif oneTimeInitBinFile is not None:   
+      if not USING_ADB:
+         writeFile('/sys/nb/one_time_init', oneTimeInitBinFile)
+      else:
+         ADB.push(oneTimeInitBinFile, ADB.TMPDIR + 'one_time_init')
 
-   with open('/proc/nanoBench') as resultFile:
-      output = resultFile.read().split('\n')
+   output = ''
+   if not USING_ADB:
+      with open('/proc/nanoBench') as resultFile:
+         output = resultFile.read().split('\n')
+   else:
+      output = ADB.runNanoBench().split('\n')
 
    ret = collections.OrderedDict()
    for line in output:
