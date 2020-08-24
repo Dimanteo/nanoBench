@@ -24,7 +24,15 @@
     #include <string.h>
 #endif
 
+#ifndef __aarch64__
 #include <cpuid.h>
+#endif
+
+//#ifdef __aarch64__
+#include <sys/syscall.h>
+#include <sys/ioctl.h>
+#include <linux/perf_event.h>
+//#endif
 
 #ifdef __KERNEL__
     #define print_error(...) pr_debug(__VA_ARGS__)
@@ -128,6 +136,7 @@ extern char* code_one_time_init;
 extern size_t code_one_time_init_length;
 
 struct pfc_config {
+#if !defined(__aarch64__)
     unsigned long evt_num;
     unsigned long umask;
     unsigned long cmask;
@@ -140,6 +149,13 @@ struct pfc_config {
     unsigned long msr_rsp1;
     unsigned int invalid;
     char* description;
+#else // aarch64
+    unsigned long evt_num;
+    unsigned char sub_evt;  // is subtrahend for another event
+    unsigned char complex;  // has subtrahend
+    struct pfc_config* subtrahend;
+    char* description;
+#endif    
 };
 extern struct pfc_config pfc_configs[];
 extern size_t n_pfc_configs;
@@ -182,8 +198,13 @@ extern int64_t pfc_mem[MAX_PROGRAMMABLE_COUNTERS];
 // Stores the RSP during measurements.
 extern void* RSP_mem;
 
+#if !defined(__aarch64__)
 extern int64_t* measurement_results[MAX_PROGRAMMABLE_COUNTERS];
 extern int64_t* measurement_results_base[MAX_PROGRAMMABLE_COUNTERS];
+#else
+extern int64_t* measurement_results[];
+extern int64_t* measurement_results_base[];
+#endif
 
 // Process should be pinned to this CPU.
 extern int cpu;
@@ -210,6 +231,9 @@ void configure_perf_ctrs_programmable(int start, int end, unsigned int usr, unsi
 void configure_MSRs(struct msr_config config);
 
 size_t get_required_runtime_code_length(void);
+
+long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags);
+int setup_perf_event();
 
 void create_runtime_code(char* measurement_template, long local_unroll_count, long local_loop_count);
 void run_warmup_experiment(char* measurement_template);
@@ -241,6 +265,13 @@ void print_all_measurement_results(int64_t* results[], int n_counters);
 #define MAGIC_BYTES_CODE_PFC_START 0xE0b513b1C2813F04
 #define MAGIC_BYTES_CODE_PFC_STOP 0xF0b513b1C2813F04
 
+#if !defined(__aarch64__)
+    #define RET_BYTES '\xC3'
+    #define NOP_BYTES '\x90'
+#else
+    #define RET_BYTES 0xd65f03c0
+    #define NOP_BYTES 0xd503201f
+#endif
 
 #define STRINGIFY2(X) #X
 #define STRINGIFY(X) STRINGIFY2(X)
@@ -262,8 +293,10 @@ void measurement_RDTSC_template(void);
 void measurement_RDTSC_template_noMem(void);
 void measurement_RDMSR_template(void);
 void measurement_RDMSR_template_noMem(void);
+void measurement_template_AARCH64(void);
 void one_time_init_template(void);
 
+#if !defined(__aarch64__)
 // RBX, RBP, and R12–R15 are callee saved registers according to the "System V AMD64 ABI" (https://en.wikipedia.org/wiki/X86_calling_conventions)
 #define SAVE_REGS_FLAGS()                                 \
     asm volatile(                                         \
@@ -308,5 +341,34 @@ void one_time_init_template(void);
         "pop rbp\n"                                       \
         "pop rbx\n"                                       \
         ".att_syntax noprefix");
+#else // if __aarch64__
+// x19-x29 are callee saved and x30 is a link register (https://en.wikipedia.org/wiki/Calling_convention#ARM_(A64))
+// Flags stored in NZCV system register (https://developer.arm.com/docs/ddi0595/h/aarch64-system-registers/nzcv)
+#define SAVE_REGS_FLAGS()               \
+    asm volatile(                       \
+        "mrs x0, NZCV\n"                \
+        "stp x0,  x19, [sp, #-16]!\n"   \
+        "stp x20, x21, [sp, #-16]!\n"   \
+        "stp x22, x23, [sp, #-16]!\n"   \
+        "stp x24, x25, [sp, #-16]!\n"   \
+        "stp x26, x27, [sp, #-16]!\n"   \
+        "stp x28, x29, [sp, #-16]!\n"   \
+        "stp x30, xzr, [sp, #-16]!\n"   \
+        :::"x0"                         \
+    );
 
-#endif
+#define RESTORE_REGS_FLAGS()        \
+    asm volatile(                   \
+        "ldp x30, xzr, [sp], #16\n" \
+        "ldp x28, x29, [sp], #16\n" \
+        "ldp x26, x27, [sp], #16\n" \
+        "ldp x24, x25, [sp], #16\n" \
+        "ldp x22, x23, [sp], #16\n" \
+        "ldp x20, x21, [sp], #16\n" \
+        "ldp x0,  x19, [sp], #16\n" \
+        "msr NZCV, x0\n"            \
+        :::"x0"                     \
+    );
+#endif // __aarch64__
+
+#endif // NANOBENCH_H

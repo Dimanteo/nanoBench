@@ -20,6 +20,7 @@
 
 #include "../common/nanoBench.h"
 
+#ifndef __aarch64__
 void print_usage() {
     printf("\n");
     printf("nanoBench usage:\n");
@@ -41,9 +42,11 @@ void print_usage() {
     printf("  -no_mem:                        The code for reading the perf. ctrs. does not make memory accesses.\n");
     printf("  -verbose:                       Outputs the results of all performance counter readings.\n");
     printf("  -cpu <n>:                       Pins the measurement thread to CPU n. \n");
+
     printf("  -usr <n>:                       If 1, counts events at a privilege level greater than 0.\n");
     printf("  -os <n>:                        If 1, counts events at a privilege level 0.\n");
     printf("  -debug:                         Generate a breakpoint trap after running the code to be benchmarked.\n");
+#endif    
 }
 
 size_t mmap_file(char* filename, char** content) {
@@ -67,10 +70,12 @@ int main(int argc, char **argv) {
     int os = 0;
 
     struct option long_opts[] = {
+#ifndef __aarch64__
         {"code", required_argument, 0, 'c'},
         {"code_init", required_argument, 0, 'i'},
         {"code_one_time_init", required_argument, 0, 'o'},
         {"config", required_argument, 0, 'f'},
+#endif        
         {"n_measurements", required_argument, 0, 'n'},
         {"unroll_count", required_argument, 0, 'u'},
         {"loop_count", required_argument, 0, 'l'},
@@ -85,18 +90,26 @@ int main(int argc, char **argv) {
         {"no_mem", no_argument, &no_mem, 1},
         {"verbose", no_argument, &verbose, 1},
         {"cpu", required_argument, 0, 'p'},
+#ifndef __aarch64__        
         {"usr", required_argument, 0, 'r'},
         {"os", required_argument, 0, 's'},
-        {"debug", no_argument, &debug, 1},
+        {"debug", no_argument, &debug, 1},   
         {"help", no_argument, 0, 'h'},
+#endif
         {0, 0, 0, 0}
     };
-
+#ifdef __aarch64__
+    code_length = mmap_file("code.bin", &code);
+    code_init_length = mmap_file("init.bin", &code_init);
+    code_one_time_init_length = mmap_file("one_time_init.bin", &code_one_time_init);
+    config_file_name = "config";
+#endif
     int option = 0;
     while ((option = getopt_long_only(argc, argv, "", long_opts, NULL)) != -1) {
         switch (option) {
             case 0:
                 break;
+#ifndef __aarch64__
             case 'c':
                 code_length = mmap_file(optarg, &code);
                 break;
@@ -109,6 +122,7 @@ int main(int argc, char **argv) {
             case 'f': ;
                 config_file_name = optarg;
                 break;
+#endif
             case 'n':
                 n_measurements = atol(optarg);
                 break;
@@ -134,12 +148,14 @@ int main(int argc, char **argv) {
             case 'p':
                 cpu = atol(optarg);
                 break;
+#ifndef __aarch64__
             case 'r':
                 usr = atoi(optarg);
                 break;
             case 's':
                 os = atoi(optarg);
                 break;
+#endif
             default:
                 print_usage();
                 return 1;
@@ -149,10 +165,11 @@ int main(int argc, char **argv) {
     /*************************************
      * Check CPUID and parse config file
      ************************************/
+#ifndef __aarch64__
     if (check_cpuid()) {
         return 1;
     }
-
+#endif
     if (config_file_name) {
         char* config_mmap;
         size_t len = mmap_file(config_file_name, &config_mmap);
@@ -217,6 +234,7 @@ int main(int argc, char **argv) {
     runtime_rsi += RUNTIME_R_SIZE/2;
     runtime_rsp += RUNTIME_R_SIZE/2;
 
+#if !defined(__aarch64__)
     for (int i=0; i<MAX_PROGRAMMABLE_COUNTERS; i++) {
         measurement_results[i] = malloc(n_measurements*sizeof(int64_t));
         measurement_results_base[i] = malloc(n_measurements*sizeof(int64_t));
@@ -225,6 +243,22 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+#else
+    measurement_results = malloc(n_measurements * sizeof(measurement_results[0])); 
+    measurments_results_base = malloc(n_measurements * sizeof(measurement_results_base[0]));
+    if (!measurement_results || !measurement_results_base) {
+        fprintf(stderr, "Error: Could not allocate memory for measurement_results\n");
+        return 1;
+    }
+    for (int i = 0; i < n_measurements; i++) {
+        measurement_results[i] = malloc((n_pfc_configs + 1) * sizeof(uint64_t)); // see struct read_format in man perf_event_open
+        measurement_results_base[i] = malloc((n_pfc_configs + 1) * sizeof(uint64_t));
+        if (!measurement_results[i] || !measurement_results_base[i]) {
+            fprintf(stderr, "Error: Could not allocate memory for measurement_results\n");
+            return 1;
+        }
+    }
+#endif
 
     /*************************************
      * Fixed-function counters
@@ -237,6 +271,7 @@ int main(int argc, char **argv) {
     char buf[100];
     char* measurement_template;
 
+#if !defined(__aarch64__)
     if (is_AMD_CPU) {
         if (no_mem) {
             measurement_template = (char*)&measurement_RDTSC_template_noMem;
@@ -250,7 +285,9 @@ int main(int argc, char **argv) {
             measurement_template = (char*)&measurement_FF_template_Intel;
         }
     }
-
+#else
+    measurement_template = (char*)&measurement_template_AARCH64;
+#endif
     create_and_run_one_time_init_code();
     run_warmup_experiment(measurement_template);
 

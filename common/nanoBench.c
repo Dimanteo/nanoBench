@@ -62,6 +62,8 @@ int64_t* measurement_results_base[MAX_PROGRAMMABLE_COUNTERS];
 
 int cpu = -1;
 
+#ifndef __arch64__
+
 void build_cpuid_string(char* buf, unsigned int r0, unsigned int r1, unsigned int r2, unsigned int r3) {
     memcpy(buf,    (char*)&r0, 4);
     memcpy(buf+4,  (char*)&r1, 4);
@@ -133,6 +135,8 @@ int check_cpuid() {
     return 0;
 }
 
+#endif
+
 void parse_counter_configs() {
     n_pfc_configs = 0;
 
@@ -169,6 +173,8 @@ void parse_counter_configs() {
             print_error("invalid configuration: %s\n", config_str);
             continue;
         }
+
+#if !defined(__aarch64__)
 
         char* umask = strsep(&tok, ".");
         nb_strtoul(umask, 16, &(pfc_configs[n_pfc_configs].umask));
@@ -209,6 +215,18 @@ void parse_counter_configs() {
                 nb_strtoul(ce+9, 0, &(pfc_configs[n_pfc_configs].msr_rsp1));
             }
         }
+#else // aarch64
+        char* sub_evt_num = strsep(&tok, " ");
+        if (strncmp(sub_evt_num, "00", 2) != 0) {
+            nb_strtoul(sub_evt_num, 16, &(pfc_configs[n_pfc_configs + 1].evt_num));
+            pfc_configs[n_pfc_configs].subtrahend = pfc_configs + n_pfc_configs + 1; // &(pfc_configs[n_pfc_configs + 1])
+            pfc_configs[n_pfc_configs].complex = 1;
+            pfc_configs[n_pfc_configs + 1].sub_evt = 1;
+            n_pfc_configs++;
+        } else {
+            pfc_configs[n_pfc_configs].complex = 0;
+        }
+#endif
         n_pfc_configs++;
     }
 }
@@ -431,6 +449,43 @@ size_t get_distance_to_code(char* measurement_template, size_t templateI) {
     return dist;
 }
 
+long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags) {
+    return syscall(SYS_perf_event_open, attr, pid, cpu, groupfd, flags);
+}
+
+int setup_perf_event() {
+    struct perf_event_attr event = {
+        .size = sizeof(event),
+        .type = PERF_TYPE_RAW,
+        .config = pfc_configs[0].evt_num,
+        .read_format = PERF_FORMAT_GROUP,
+        .exclude_kernel = 1,
+        .exclude_hv = 1,
+        .pinned = 1,
+        .disabled = 1
+    };
+
+    int fd = 0;
+
+    if (fd = perf_event_open(&event, 0, -1, -1, 0) < 0) {
+        print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
+        exit(1);
+    }
+
+    event.disabled = 0;
+    event.pinned = 0;
+
+    for (int config_i = 1; config_i < n_pfc_configs; config_i++) {
+        event.config = pfc_configs[config_i].evt_num;
+        if (perf_event_open(&event, 0, -1, fd, 0) < 0) {
+            print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
+            exit(1);
+        }
+    }
+
+    return fd;
+}
+
 void create_runtime_code(char* measurement_template, long local_unroll_count, long local_loop_count) {
     size_t templateI = 0;
     size_t codeI = 0;
@@ -459,15 +514,26 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
             rcI += code_init_length;
 
             if (local_loop_count > 0) {
+#if !defined(__aarch64__)                
                 runtime_code[rcI++] = '\x49'; runtime_code[rcI++] = '\xC7'; runtime_code[rcI++] = '\xC7';
                 *(int32_t*)(&runtime_code[rcI]) = (int32_t)local_loop_count; rcI += 4; // mov R15, local_loop_count
+#else           
+                // movk x15, (local_loop_count >> 16), lsl 16
+                int32_t movk_bytes = 0xF2A0000F | ((local_loop_count & 0xFFFF0000) >> 11);
+                *(int32_t*)(&runtime_code[rcI]) = movk_bytes; rcI += 4;
+                // movk x15, (local_loop_count & 0xFFFF)
+                movk_bytes = 0xF280000F | ((local_loop_count & 0xFFFF) << 5);
+                *(int32_t*)(&runtime_code[rcI]) = movk_bytes; rcI += 4;
+                // x15 = local_loop_count
+#endif 
             }
 
             size_t dist = get_distance_to_code(measurement_template, templateI);
             size_t nFill = (64 - ((uintptr_t)&runtime_code[rcI+dist] % 64)) % 64;
             nFill += alignment_offset;
             for (size_t i=0; i<nFill; i++) {
-                runtime_code[rcI++] = '\x90';
+                runtime_code[rcI] = NOP_BYTES;
+                rcI += sizeof(NOP_BYTES);
             }
         } else if (starts_with_magic_bytes(&measurement_template[templateI], MAGIC_BYTES_PFC_START)) {
             magic_bytes_pfc_start_I = templateI;
@@ -508,14 +574,24 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
 
             if (unrollI >= local_unroll_count) {
                 if (local_loop_count > 0) {
+#if !defined(__aarch64__)                    
                     runtime_code[rcI++] = '\x49'; runtime_code[rcI++] = '\xFF'; runtime_code[rcI++] = '\xCF'; // dec R15
                     runtime_code[rcI++] = '\x0F'; runtime_code[rcI++] = '\x85';
                     *(int32_t*)(&runtime_code[rcI]) = (int32_t)(rcI_code_start-rcI-4); rcI += 4; // jnz loop_start
+#else
+                    *(int32_t*)(&runtime_code[rcI]) = 0xF10005EF; // subs x15, x15, 1
+                    rcI += 4;
+                    int32_t offs = ~((rcI - rcI_code_start - 1) >> 2);
+                    int32_t branch_bytes = 0x54000001 | (offs & 0x7FFFF) << 5;
+                    *(int32_t*)(&runtime_code[rcI]) = branch_bytes; // b.ne loop_start
+                    rcI += 4;
+#endif
                 }
-
+#ifndef __aarch64__
                 if (debug) {
                     runtime_code[rcI++] = '\xCC'; // INT3
                 }
+#endif                
             }
         } else if (starts_with_magic_bytes(&measurement_template[templateI], MAGIC_BYTES_PFC_END)) {
             if (unrollI < local_unroll_count) {
@@ -553,9 +629,16 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
         continue_outer_loop: ;
     }
     templateI += 8;
+#if !defined(__aarch64__)
     do {
         runtime_code[rcI++] = measurement_template[templateI++];
     } while (measurement_template[templateI-1] != '\xC3'); // 0xC3 = ret
+#else
+    while (*(int32_t*)(measurement_template + templateI) != RET_BYTES) {
+        runtime_code[rcI++] = measurement_template[templateI++];
+    }
+    *(int32_t*)(runtime_code + rcI) = *(int32_t*)(measurement_template + templateI); // ret
+#endif
 }
 
 void create_and_run_one_time_init_code() {
@@ -593,9 +676,16 @@ void create_and_run_one_time_init_code() {
         }
     }
     templateI += 8;
+#if !defined(__aarch64__)
     do {
         runtime_one_time_init_code[rcI++] = template[templateI++];
-    } while (template[templateI-1] != '\xC3'); // 0xC3 = ret
+    } while (template[templateI-1] != RET_BYTES); // ret
+#else
+    while (*(int32_t*)(template + templateI) != RET_BYTES) {
+        runtime_one_time_init_code[rcI++] = template[templateI++];
+    }
+    *(int32_t*)(runtime_one_time_init_code + rcI) = *(int32_t*)(template + templateI); // ret
+#endif
 
     ((void(*)(void))runtime_one_time_init_code)();
 }
@@ -1516,6 +1606,18 @@ void measurement_RDMSR_template_noMem() {
     RESTORE_REGS_FLAGS();
     asm(".quad "STRINGIFY(MAGIC_BYTES_TEMPLATE_END));
 }
+
+#ifdef __aarch64__
+void measurement_template_AARCH64() {
+    SAVE_REGS_FLAGS();
+    asm volatile (
+        ".quad "STRINGIFY(MAGIC_BYTES_INIT)"    \n"
+        ".quad "STRINGIFY(MAGIC_BYTES_CODE)"    \n"
+    );
+    RESTORE_REGS_FLAGS();
+    asm(".quad "STRINGIFY(MAGIC_BYTES_TEMPLATE_END));
+}
+#endif
 
 void one_time_init_template() {
     SAVE_REGS_FLAGS();
