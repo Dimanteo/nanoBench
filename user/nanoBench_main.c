@@ -165,11 +165,10 @@ int main(int argc, char **argv) {
     /*************************************
      * Check CPUID and parse config file
      ************************************/
-#ifndef __aarch64__
     if (check_cpuid()) {
         return 1;
     }
-#endif
+
     if (config_file_name) {
         char* config_mmap;
         size_t len = mmap_file(config_file_name, &config_mmap);
@@ -271,23 +270,22 @@ int main(int argc, char **argv) {
     char buf[100];
     char* measurement_template;
 
-#if !defined(__aarch64__)
     if (is_AMD_CPU) {
         if (no_mem) {
             measurement_template = (char*)&measurement_RDTSC_template_noMem;
         } else {
             measurement_template = (char*)&measurement_RDTSC_template;
         }
-    } else {
+    } else if (is_Intel_CPU) {
         if (no_mem) {
             measurement_template = (char*)&measurement_FF_template_Intel_noMem;
         } else {
             measurement_template = (char*)&measurement_FF_template_Intel;
         }
+    } else {
+        measurement_template = (char*)&measurement_template_AARCH64;
     }
-#else
-    measurement_template = (char*)&measurement_template_AARCH64;
-#endif
+
     create_and_run_one_time_init_code();
     run_warmup_experiment(measurement_template);
 
@@ -303,7 +301,7 @@ int main(int argc, char **argv) {
         }
 
         printf("%s", compute_result_str(buf, sizeof(buf), "RDTSC", 0));
-    } else {
+    } else if (is_Intel_CPU) {
         configure_perf_ctrs_FF(usr, os);
 
         run_experiment(measurement_template, measurement_results_base, 4, base_unroll_count, base_loop_count);
@@ -320,6 +318,11 @@ int main(int argc, char **argv) {
         printf("%s", compute_result_str(buf, sizeof(buf), "Instructions retired", 1));
         printf("%s", compute_result_str(buf, sizeof(buf), "Core cycles", 2));
         printf("%s", compute_result_str(buf, sizeof(buf), "Reference cycles", 3));
+    } else {
+        int fd = setup_perf_event();
+        run_perf_experiment(measurement_template, measurement_results_base, base_unroll_count, base_loop_count, fd);
+        run_perf_experiment(measurement_template, measurement_results, main_unroll_count,main_loop_count, fd);
+        // TODO verbose
     }
 
     /*************************************

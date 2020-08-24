@@ -239,6 +239,7 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
 void run_warmup_experiment(char* measurement_template);
 void run_experiment(char* measurement_template, int64_t* results[], int n_counters, long local_unroll_count, long local_loop_count);
 void create_and_run_one_time_init_code(void);
+void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd);
 
 char* compute_result_str(char* buf, size_t buf_len, char* desc, int counter);
 int64_t get_aggregate_value_100(int64_t* values, size_t length);

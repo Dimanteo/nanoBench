@@ -44,6 +44,7 @@ unsigned long cur_rdmsr = 0;
 
 int is_Intel_CPU = 0;
 int is_AMD_CPU = 0;
+int is_ARM_CPU = 0;
 
 int n_programmable_counters;
 
@@ -72,6 +73,10 @@ void build_cpuid_string(char* buf, unsigned int r0, unsigned int r1, unsigned in
 }
 
 int check_cpuid() {
+#ifdef __aarch64__
+    is_ARM_CPU = 1;
+    return 0;
+#endif
     unsigned int eax, ebx, ecx, edx;
     __cpuid(0, eax, ebx, ecx, edx);
 
@@ -723,6 +728,27 @@ void run_experiment(char* measurement_template, int64_t* results[], int n_counte
         raw_local_irq_restore(flags);
         put_cpu();
     #endif
+}
+
+void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd) {
+    create_runtime_code(measurement_template, local_unroll_count, local_loop_count);
+
+    if (ioctl(fd, PERF_EVENT_IOC_ENABLE, PERF_IOC_FLAG_GROUP) < 0) {
+        print_error("ioctl failed. Can't enable perf counting.");
+        exit(1);
+    }
+
+    for (long ri=-warm_up_count; ri<n_measurements; ri++) {
+        if (ioctl(fd, PERF_EVENT_IOC_RESET, PERF_IOC_FLAG_GROUP) < 0) {
+            print_error("ioctl failed. Can't reset perf counters.");
+            exit(1);
+        }
+        ((void(*)(void))runtime_code)();
+
+        // ignore "warm-up" runs (ri<0), but don't execute different branches
+        long ri_ = (ri>=0) ? ri : 0;
+        read(fd, results[ri_], (n_pfc_configs + 1) * sizeof(uint64_t));
+    }
 }
 
 char* compute_result_str(char* buf, size_t buf_len, char* desc, int counter) {
