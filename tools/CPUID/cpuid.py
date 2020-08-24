@@ -93,7 +93,7 @@ class CPUID(object):
         # Measurements performed on external device.
         # TODO call ADB cpuid hadler
         self.use_adb = use_adb
-        # return
+        return
 
         # Measurments on current x86 based machine
         if platform.machine() not in ("AMD64", "x86_64", "x86", "i686"):
@@ -533,9 +533,9 @@ def get_cache_info(cpu):
       }
    elif vendor == "Arm Limited":
       cacheInfo['L1I'] = {
-         'lineSize' : 64,       # Not documented
-         'nSets'    : 1024,     # Size / assoc / lineSize
-         'assoc'    : 2
+         'lineSize' : 64,
+         'nSets'    : 512,
+         'assoc'    : 4
       }
       cacheInfo['LD1'] = {
          'lineSize' : 64,

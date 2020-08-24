@@ -3,11 +3,13 @@ import collections
 import subprocess
 import sys
 
-import adbNanoBench as ADB
+USING_ADB = False
+REMOTEDIR = '/data/local/tmp/'
+RAMDISK   = '/tmp/ramdisk/
+AARCH64_BIN_PATH = '../../user/libs/arm64-v8a/'
 
 PFC_START_ASM = '.quad 0xE0b513b1C2813F04'
 PFC_STOP_ASM = '.quad 0xF0b513b1C2813F04'
-USING_ADB = False
 
 def writeFile(fileName, content):
    with open(fileName, 'w') as f:
@@ -15,9 +17,15 @@ def writeFile(fileName, content):
 
 def assemble(code, objFile, asmFile='/tmp/ramdisk/asm.s'):
    try:
-      code = '.intel_syntax noprefix;' + code + ';1:;.att_syntax prefix\n'
-      with open(asmFile, 'w') as f: f.write(code);
-      subprocess.check_call(['as', asmFile, '-o', objFile])
+      if not USING_ADB:
+         code = '.intel_syntax noprefix;' + code + ';1:;.att_syntax prefix\n'
+         with open(asmFile, 'w') as f: f.write(code);
+         subprocess.check_call(['as', asmFile, '-o', objFile])
+      else:
+         code = '.arch armv8-a\n' + code + ';1:;\n'
+         with open(asmFile, 'w') as f: f.write(code);
+         # should add $NDK_DIR/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin to PATH variable
+         subprocess.check_call(['aarch64-linux-android-as', asmFile, '-o', objFile])
    except subprocess.CalledProcessError as e:
       sys.stderr.write("Error (assemble): " + str(e))
       sys.stderr.write(code)
@@ -26,7 +34,10 @@ def assemble(code, objFile, asmFile='/tmp/ramdisk/asm.s'):
 
 def objcopy(sourceFile, targetFile):
    try:
-      subprocess.check_call(['objcopy', sourceFile, '-O', 'binary', targetFile])
+      if not USING_ADB:
+         subprocess.check_call(['objcopy', sourceFile, '-O', 'binary', targetFile])
+      else:
+         subprocess.check_call(['aarch64-linux-android-objcopy', sourceFile, '-O', 'binary', targetFile])
    except subprocess.CalledProcessError as e:
       sys.stderr.write("Error (objcopy): " + str(e))
       exit(1)
@@ -48,6 +59,33 @@ def getR14Size():
          mb = int(line.split()[2])
          getR14Size.r14Size = mb * 1024 * 1024
    return getR14Size.r14Size
+
+
+def adbPush(local, remote):
+   try:
+      subprocess.check_call(['adb', 'push', local, remote])
+   except subprocess.CalledProcessError as e:
+      sys.stderr.write(str(e.returncode) + ' ADB could not push ' + local + ' to ' + remote + ' ' + '\n')
+      raise e
+
+
+def adbPull(remote, local):
+   try:
+      subprocess.check_call(['adb', 'pull', remote, local])
+   except subprocess.CalledProcessError as e:
+      sys.stderr.write(str(e.returncode) + ' ADB could not pull ' + remote + ' to ' + local + '\n')
+      raise e
+
+
+def adbExec(cmd):
+   try:
+      output = subprocess.check_output(['adb', 'shell'] + cmd)
+      return output
+   except subprocess.CalledProcessError as e:
+      query = ''
+      for s in cmd: query += s + ' '
+      sys.stderr.write(' ADB could not execute "' + query + '" ' + e.output + '\n')
+      raise e
 
 
 ramdiskCreated = False
@@ -152,6 +190,32 @@ def resetNanoBench():
    paramDict.clear()
 
 
+def adbRunNanoBench():
+   adbPush(RAMDISK + 'code.bin', REMOTEDIR)
+   adbPush(RAMDISK + 'init.bin', REMOTEDIR)
+   adbPush(RAMDISK + 'one_time_init.bin', REMOTEDIR)
+   if paramDict['config'] is not None:
+      adbPush(RAMDISK + 'config', REMOTEDIR)
+   adbPush(AARCH64_BIN_PATH + 'nb', REMOTEDIR)
+   query = [REMOTEDIR + 'nb']
+   query += ['-n_measurements', paramDict['nMeasurements']]
+   query += ['-unroll_count', paramDict['unrollCount']]
+   query += ['-loop_count', paramDict['loopCount']]
+   query += ['-warm_up_count', paramDict['warmUpCount']]
+   query += ['-initial_warm_up_count', paramDict['initialWarmUpCount']]
+   query += ['-alignment_offset', paramDict['alignmentOffset']]
+   query += ['-' + paramDict['aggregateFunction']]
+   query += ['-basic_mode', paramDict['basicMode']]
+   query += ['-no_mem', paramDict['noMem']]
+   query += ['-cpu', '0']
+   query += ['-verbose', paramDict['verbose']]
+   adbExec(query)
+   adbPull(REMOTEDIR + 'adbres', RAMDISK)
+   adbExec(['rm', '-r', REMOTEDIR + '*'])
+   with open(RAMDISK + 'adbres') as resultFile:
+      return resultFile.read()
+
+
 # code, codeObjFile, codeBinFile cannot be specified at the same time (same for init, initObjFile and initBinFile)
 def runNanoBench(code='', codeObjFile=None, codeBinFile=None,
                  init='', initObjFile=None, initBinFile=None,
@@ -167,13 +231,11 @@ def runNanoBench(code='', codeObjFile=None, codeBinFile=None,
       objcopy(codeObjFile, '/tmp/ramdisk/code.bin')
       if not USING_ADB:
          writeFile('/sys/nb/code', '/tmp/ramdisk/code.bin')
-      else:
-         ADB.push('/tmp/ramdisk/code.bin', ADB.TMPDIR)
    elif codeBinFile is not None:
       if not USING_ADB:
          writeFile('/sys/nb/code', codeBinFile)
       else:
-         ADB.push(codeBinFile, ADB.TMPDIR + 'code')
+         writeFile('/tmp/ramdisk/code.bin', codeBinFile)
 
    if init:
       initObjFile = '/tmp/ramdisk/init.o'
@@ -182,13 +244,11 @@ def runNanoBench(code='', codeObjFile=None, codeBinFile=None,
       objcopy(initObjFile, '/tmp/ramdisk/init.bin')
       if not USING_ADB:
          writeFile('/sys/nb/init', '/tmp/ramdisk/init.bin')
-      else:
-         ADB.push('/tmp/ramdisk/init.bin', ADB.TMPDIR + 'init')
    elif initBinFile is not None:
       if not USING_ADB:
          writeFile('/sys/nb/init', initBinFile)
       else:
-         ADB.push(initBinFile, ADB.TMPDIR + 'init')
+         writeFile('tmp/ramdisk/init.bin', initBinFile)
 
    if oneTimeInit:
       oneTimeInitObjFile = '/tmp/ramdisk/one_time_init.o'
@@ -197,20 +257,18 @@ def runNanoBench(code='', codeObjFile=None, codeBinFile=None,
       objcopy(oneTimeInitObjFile, '/tmp/ramdisk/one_time_init.bin')
       if not USING_ADB:
          writeFile('/sys/nb/one_time_init', '/tmp/ramdisk/one_time_init.bin')
-      else:
-         ADB.push('/tmp/ramdisk/one_time_init.bin', ADB.TMPDIR + 'one_time_init')
    elif oneTimeInitBinFile is not None:   
       if not USING_ADB:
          writeFile('/sys/nb/one_time_init', oneTimeInitBinFile)
       else:
-         ADB.push(oneTimeInitBinFile, ADB.TMPDIR + 'one_time_init')
+         writeFile('/tmp/ramdisk/one_time_init.bin')
 
    output = ''
    if not USING_ADB:
       with open('/proc/nanoBench') as resultFile:
          output = resultFile.read().split('\n')
    else:
-      output = ADB.runNanoBench().split('\n')
+      output = adbRunNanoBench(paramDict).split('\n')
 
    ret = collections.OrderedDict()
    for line in output:
