@@ -45,9 +45,9 @@ void print_usage() {
 
     printf("  -usr <n>:                       If 1, counts events at a privilege level greater than 0.\n");
     printf("  -os <n>:                        If 1, counts events at a privilege level 0.\n");
-    printf("  -debug:                         Generate a breakpoint trap after running the code to be benchmarked.\n");
-#endif    
+    printf("  -debug:                         Generate a breakpoint trap after running the code to be benchmarked.\n");    
 }
+#endif
 
 size_t mmap_file(char* filename, char** content) {
     int fd = open(filename, O_RDONLY);
@@ -66,6 +66,7 @@ int main(int argc, char **argv) {
      * Parse command-line options
      ************************************/
     char* config_file_name = NULL;
+    char* output_file_name = NULL;
     int usr = 1;
     int os = 0;
 
@@ -75,7 +76,8 @@ int main(int argc, char **argv) {
         {"code_init", required_argument, 0, 'i'},
         {"code_one_time_init", required_argument, 0, 'o'},
         {"config", required_argument, 0, 'f'},
-#endif        
+#endif
+        {"output", required_argument, 0, 't'},
         {"n_measurements", required_argument, 0, 'n'},
         {"unroll_count", required_argument, 0, 'u'},
         {"loop_count", required_argument, 0, 'l'},
@@ -123,6 +125,8 @@ int main(int argc, char **argv) {
                 config_file_name = optarg;
                 break;
 #endif
+            case 't':
+                output_file_name = optarg;
             case 'n':
                 n_measurements = atol(optarg);
                 break;
@@ -157,7 +161,9 @@ int main(int argc, char **argv) {
                 break;
 #endif
             default:
-                print_usage();
+                #ifndef __aarch64__
+                    print_usage();
+                #endif
                 return 1;
             }
     }
@@ -243,8 +249,8 @@ int main(int argc, char **argv) {
         }
     }
 #else
-    measurement_results = malloc(n_measurements * sizeof(measurement_results[0])); 
-    measurments_results_base = malloc(n_measurements * sizeof(measurement_results_base[0]));
+    measurement_results = (int64_t**)malloc(n_measurements * sizeof(measurement_results[0])); 
+    measurement_results_base = (int64_t**)malloc(n_measurements * sizeof(measurement_results_base[0]));
     if (!measurement_results || !measurement_results_base) {
         fprintf(stderr, "Error: Could not allocate memory for measurement_results\n");
         return 1;
@@ -322,12 +328,21 @@ int main(int argc, char **argv) {
         int fd = setup_perf_event();
         run_perf_experiment(measurement_template, measurement_results_base, base_unroll_count, base_loop_count, fd);
         run_perf_experiment(measurement_template, measurement_results, main_unroll_count,main_loop_count, fd);
-        // TODO verbose
+        
+        if (verbose) {
+            printf("\nBase measurement results (unroll_count=%ld, loop_count=%ld):\n\n", base_unroll_count, base_loop_count);
+            print_all_perf_measurement_results(measurement_results_base);
+            printf("Main measurement results (unroll_count=%ld, loop_count=%ld):\n\n", main_unroll_count, main_loop_count);
+            print_all_perf_measurement_results(measurement_results);
+        }
+
+        dump_perf_result(output_file_name);
     }
 
     /*************************************
      * Programmable counters
      ************************************/
+#ifndef __aarch64__
     if (is_AMD_CPU) {
         if (no_mem) {
             measurement_template = (char*)&measurement_template_AMD_noMem;
@@ -372,7 +387,7 @@ int main(int argc, char **argv) {
             if (!pfc_configs[i+c].invalid) printf("%s", compute_result_str(buf, sizeof(buf), pfc_configs[i+c].description, c));
         }
     }
-
+#endif
     /*************************************
      * Cleanup
      ************************************/
@@ -384,10 +399,19 @@ int main(int argc, char **argv) {
     free(runtime_rsi - RUNTIME_R_SIZE/2);
     free(runtime_rsp - RUNTIME_R_SIZE/2);
 
-    for (int i=0; i<MAX_PROGRAMMABLE_COUNTERS; i++) {
-        free(measurement_results[i]);
-        free(measurement_results_base[i]);
-    }
+    #if !defined(__aarch64__)
+        for (int i=0; i<MAX_PROGRAMMABLE_COUNTERS; i++) {
+            free(measurement_results[i]);
+            free(measurement_results_base[i]);
+        }
+    #else
+        for (int i = 0; i < n_measurements; i++) {
+            free(measurement_results_base[i]);
+            free(measurement_results[i]);
+        }
+        free(measurement_results_base);
+        free(measurement_results);
+    #endif
 
     if (pfc_config_file_content) {
         free(pfc_config_file_content);

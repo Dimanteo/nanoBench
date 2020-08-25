@@ -153,7 +153,6 @@ struct pfc_config {
     unsigned long evt_num;
     unsigned char sub_evt;  // is subtrahend for another event
     unsigned char complex;  // has subtrahend
-    struct pfc_config* subtrahend;
     char* description;
 #endif    
 };
@@ -232,14 +231,10 @@ void configure_MSRs(struct msr_config config);
 
 size_t get_required_runtime_code_length(void);
 
-long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags);
-int setup_perf_event();
-
 void create_runtime_code(char* measurement_template, long local_unroll_count, long local_loop_count);
 void run_warmup_experiment(char* measurement_template);
 void run_experiment(char* measurement_template, int64_t* results[], int n_counters, long local_unroll_count, long local_loop_count);
 void create_and_run_one_time_init_code(void);
-void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd);
 
 char* compute_result_str(char* buf, size_t buf_len, char* desc, int counter);
 int64_t get_aggregate_value_100(int64_t* values, size_t length);
@@ -248,6 +243,14 @@ long long ll_abs(long long val);
 
 void print_all_measurement_results(int64_t* results[], int n_counters);
 
+#ifdef __aarch64__
+    long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags);
+    int setup_perf_event();
+    void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd);
+    void print_all_perf_measurement_results(int64_t* results[]);
+    void compute_perf_result_agg_100(int64_t* results[], int64_t* agg_results);
+    void dump_perf_result(const char* filename);
+#endif
 
 #define MAGIC_BYTES_INIT 0x10b513b1C2813F04
 #define MAGIC_BYTES_CODE 0x20b513b1C2813F04

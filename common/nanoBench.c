@@ -58,8 +58,13 @@ void* runtime_rsp;
 int64_t pfc_mem[MAX_PROGRAMMABLE_COUNTERS];
 void* RSP_mem;
 
-int64_t* measurement_results[MAX_PROGRAMMABLE_COUNTERS];
-int64_t* measurement_results_base[MAX_PROGRAMMABLE_COUNTERS];
+#if !defined(__aarch64__)
+    int64_t* measurement_results[MAX_PROGRAMMABLE_COUNTERS];
+    int64_t* measurement_results_base[MAX_PROGRAMMABLE_COUNTERS];
+#else
+    int64_t* measurement_results[];
+    int64_t* measurement_results_base[];
+#endif
 
 int cpu = -1;
 
@@ -224,12 +229,15 @@ void parse_counter_configs() {
         char* sub_evt_num = strsep(&tok, " ");
         if (strncmp(sub_evt_num, "00", 2) != 0) {
             nb_strtoul(sub_evt_num, 16, &(pfc_configs[n_pfc_configs + 1].evt_num));
-            pfc_configs[n_pfc_configs].subtrahend = pfc_configs + n_pfc_configs + 1; // &(pfc_configs[n_pfc_configs + 1])
+            pfc_configs[n_pfc_configs].subtrahend = pfc_configs + n_pfc_configs + 1;
             pfc_configs[n_pfc_configs].complex = 1;
+            pfc_configs[n_pfc_configs].sub_evt = 0;
+            pfc_configs[n_pfc_configs + 1].complex = 0;
             pfc_configs[n_pfc_configs + 1].sub_evt = 1;
             n_pfc_configs++;
         } else {
             pfc_configs[n_pfc_configs].complex = 0;
+            pfc_configs[n_pfc_configs].sub_evt = 0;
         }
 #endif
         n_pfc_configs++;
@@ -452,43 +460,6 @@ size_t get_distance_to_code(char* measurement_template, size_t templateI) {
         }
     }
     return dist;
-}
-
-long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags) {
-    return syscall(SYS_perf_event_open, attr, pid, cpu, groupfd, flags);
-}
-
-int setup_perf_event() {
-    struct perf_event_attr event = {
-        .size = sizeof(event),
-        .type = PERF_TYPE_RAW,
-        .config = pfc_configs[0].evt_num,
-        .read_format = PERF_FORMAT_GROUP,
-        .exclude_kernel = 1,
-        .exclude_hv = 1,
-        .pinned = 1,
-        .disabled = 1
-    };
-
-    int fd = 0;
-
-    if (fd = perf_event_open(&event, 0, -1, -1, 0) < 0) {
-        print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
-        exit(1);
-    }
-
-    event.disabled = 0;
-    event.pinned = 0;
-
-    for (int config_i = 1; config_i < n_pfc_configs; config_i++) {
-        event.config = pfc_configs[config_i].evt_num;
-        if (perf_event_open(&event, 0, -1, fd, 0) < 0) {
-            print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
-            exit(1);
-        }
-    }
-
-    return fd;
 }
 
 void create_runtime_code(char* measurement_template, long local_unroll_count, long local_loop_count) {
@@ -730,27 +701,6 @@ void run_experiment(char* measurement_template, int64_t* results[], int n_counte
     #endif
 }
 
-void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd) {
-    create_runtime_code(measurement_template, local_unroll_count, local_loop_count);
-
-    if (ioctl(fd, PERF_EVENT_IOC_ENABLE, PERF_IOC_FLAG_GROUP) < 0) {
-        print_error("ioctl failed. Can't enable perf counting.");
-        exit(1);
-    }
-
-    for (long ri=-warm_up_count; ri<n_measurements; ri++) {
-        if (ioctl(fd, PERF_EVENT_IOC_RESET, PERF_IOC_FLAG_GROUP) < 0) {
-            print_error("ioctl failed. Can't reset perf counters.");
-            exit(1);
-        }
-        ((void(*)(void))runtime_code)();
-
-        // ignore "warm-up" runs (ri<0), but don't execute different branches
-        long ri_ = (ri>=0) ? ri : 0;
-        read(fd, results[ri_], (n_pfc_configs + 1) * sizeof(uint64_t));
-    }
-}
-
 char* compute_result_str(char* buf, size_t buf_len, char* desc, int counter) {
     int64_t agg = get_aggregate_value_100(measurement_results[counter], n_measurements);
     int64_t agg_base = get_aggregate_value_100(measurement_results_base[counter], n_measurements);
@@ -833,6 +783,145 @@ void print_all_measurement_results(int64_t* results[], int n_counters) {
     }
     print_verbose("\n");
 }
+
+#ifdef __aarch64__
+
+    long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags) {
+        return syscall(SYS_perf_event_open, attr, pid, cpu, groupfd, flags);
+    }
+
+    int setup_perf_event() {
+        struct perf_event_attr event = {
+            .size = sizeof(event),
+            .type = PERF_TYPE_RAW,
+            .config = pfc_configs[0].evt_num,
+            .read_format = PERF_FORMAT_GROUP,
+            .exclude_kernel = 1,
+            .exclude_hv = 1,
+            .pinned = 1,
+            .disabled = 1
+        };
+
+        int fd = 0;
+
+        if (fd = perf_event_open(&event, 0, -1, -1, 0) < 0) {
+            print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
+            exit(1);
+        }
+
+        event.disabled = 0;
+        event.pinned = 0;
+
+        for (int config_i = 1; config_i < n_pfc_configs; config_i++) {
+            event.config = pfc_configs[config_i].evt_num;
+            if (perf_event_open(&event, 0, -1, fd, 0) < 0) {
+                print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
+                exit(1);
+            }
+        }
+
+        return fd;
+    }
+
+    void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd) {
+        create_runtime_code(measurement_template, local_unroll_count, local_loop_count);
+
+        if (ioctl(fd, PERF_EVENT_IOC_ENABLE, PERF_IOC_FLAG_GROUP) < 0) {
+            print_error("ioctl failed. Can't enable perf counting.");
+            exit(1);
+        }
+
+        for (long ri=-warm_up_count; ri<n_measurements; ri++) {
+            if (ioctl(fd, PERF_EVENT_IOC_RESET, PERF_IOC_FLAG_GROUP) < 0) {
+                print_error("ioctl failed. Can't reset perf counters.");
+                exit(1);
+            }
+            ((void(*)(void))runtime_code)();
+
+            // ignore "warm-up" runs (ri<0), but don't execute different branches
+            long ri_ = (ri>=0) ? ri : 0;
+            read(fd, results[ri_], (n_pfc_configs + 1) * sizeof(uint64_t));
+        }
+
+        if (ioctl(fd, PERF_EVENT_IOC_DISABLE, PERF_IOC_FLAG_GROUP) < 0) {
+            print_error("ioctl failed. Can't enable perf counting.");
+            exit(1);
+        }
+    }
+
+    void print_all_perf_measurement_results(int64_t* results[]) {
+        int run_padding = (n_measurements<=10?1:(n_measurements<=100?2:(n_measurements<=1000?3:4)));
+
+        size_t size = 120;
+        char buf[size];
+
+        sprintf(buf, "\tevt_num%*s", run_padding, "");
+        for (int c = 0; c < n_pfc_configs; c++) {
+            sprintf(buf + strlen(buf), "       %c%#X", 
+                pfc_configs[c].sub_evt ? '-' : " ",
+                pfc_configs[c].evt_num);
+        }
+        print_verbose("%s\n", buf);
+
+        for (int i = 0; i < n_measurements; i++) {
+            sprintf(buf, "\trun %*d:  ", run_padding, i);
+            for (int c = 0; c < n_pfc_configs; c++) {
+                sprintf(buf +strlen(buf), "%9lld", (long long)results[i][c + 1]);
+            }
+            print_verbose("%s\n", buf);
+        }
+        print_verbose("\n")
+    }
+
+    void compute_perf_result_agg_100(int64_t* results[], int64_t* agg_results) {
+        int64_t* values = (int64_t*)malloc(sizeof(values[0]) * n_measurements);
+
+        for (int c = 0; c < n_pfc_configs; c++) {
+            if (pfc_configs[c].sub_evt) {
+                continue;
+            }
+            if (pfc_configs[c].complex) {
+                for (int m = 0; m < n_measurements; m++) {
+                    values[m] = results[m][c + 1] - results[m][c + 2];
+                }
+            } else {
+                for (int m = 0; m < n_measurements; m++) {
+                    values[m] = results[m][c + 1];
+                }
+            }
+            agg_results[c] = get_aggregate_value_100(values, n_measurements);
+        }
+
+        free(values);
+    }
+
+    void dump_perf_result(const char* filename) {
+            int64_t* agg = (int64_t*)malloc(sizeof(agg[0]) * n_pfc_configs);
+            int64_t* agg_base = (int64_t*)malloc(sizeof(agg_base[0]) * n_pfc_configs);
+            FILE* file = fopen(filename, "wb");
+
+            compute_perf_result_agg_100(measurement_results, agg);
+            compute_perf_result_agg_100(measurement_results_base, agg_base);
+
+            int64_t n_rep = loop_count * unroll_count;
+            if (loop_count == 0) {
+                n_rep = unroll_count;
+            }
+
+            for (int c = 0; c < n_pfc_configs; c++) {
+                if (pfc_configs[c].sub_evt) {
+                    continue;
+                }
+                int64_t result = ((agg[c] - agg_base[c]) + n_rep / 2) / n_rep;
+                fprintf(file, "%s: %s%lld.%.2lld\n", pfc_configs[c].description, (result<0?"-":""), ll_abs(result/100), ll_abs(result)%100);
+            }
+
+            fclose(file);
+            free(agg);
+            free(agg_base);
+    }
+
+#endif
 
 int starts_with_magic_bytes(char* c, int64_t magic_bytes) {
     return (*((int64_t*)c) == magic_bytes);
