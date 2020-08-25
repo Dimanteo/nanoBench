@@ -68,8 +68,6 @@ void* RSP_mem;
 
 int cpu = -1;
 
-#ifndef __arch64__
-
 void build_cpuid_string(char* buf, unsigned int r0, unsigned int r1, unsigned int r2, unsigned int r3) {
     memcpy(buf,    (char*)&r0, 4);
     memcpy(buf+4,  (char*)&r1, 4);
@@ -78,74 +76,72 @@ void build_cpuid_string(char* buf, unsigned int r0, unsigned int r1, unsigned in
 }
 
 int check_cpuid() {
-#ifdef __aarch64__
-    is_ARM_CPU = 1;
-    return 0;
-#endif
-    unsigned int eax, ebx, ecx, edx;
-    __cpuid(0, eax, ebx, ecx, edx);
+    #if  defined(__aarch64__)
+        is_ARM_CPU = 1;
+        return 0;
+    #else
+        unsigned int eax, ebx, ecx, edx;
+        __cpuid(0, eax, ebx, ecx, edx);
 
-    char proc_vendor_string[17] = {0};
-    build_cpuid_string(proc_vendor_string, ebx, edx, ecx, 0);
-    print_user_verbose("Vendor ID: %s\n", proc_vendor_string);
+        char proc_vendor_string[17] = {0};
+        build_cpuid_string(proc_vendor_string, ebx, edx, ecx, 0);
+        print_user_verbose("Vendor ID: %s\n", proc_vendor_string);
 
-    char proc_brand_string[48];
-    __cpuid(0x80000002, eax, ebx, ecx, edx);
-    build_cpuid_string(proc_brand_string, eax, ebx, ecx, edx);
-    __cpuid(0x80000003, eax, ebx, ecx, edx);
-    build_cpuid_string(proc_brand_string+16, eax, ebx, ecx, edx);
-    __cpuid(0x80000004, eax, ebx, ecx, edx);
-    build_cpuid_string(proc_brand_string+32, eax, ebx, ecx, edx);
-    print_user_verbose("Brand: %s\n", proc_brand_string);
+        char proc_brand_string[48];
+        __cpuid(0x80000002, eax, ebx, ecx, edx);
+        build_cpuid_string(proc_brand_string, eax, ebx, ecx, edx);
+        __cpuid(0x80000003, eax, ebx, ecx, edx);
+        build_cpuid_string(proc_brand_string+16, eax, ebx, ecx, edx);
+        __cpuid(0x80000004, eax, ebx, ecx, edx);
+        build_cpuid_string(proc_brand_string+32, eax, ebx, ecx, edx);
+        print_user_verbose("Brand: %s\n", proc_brand_string);
 
-    __cpuid(0x01, eax, ebx, ecx, edx);
-    unsigned int displ_family = ((eax >> 8) & 0xF);
-    if (displ_family == 0x0F) {
-        displ_family += ((eax >> 20) & 0xFF);
-    }
-    unsigned int displ_model = ((eax >> 4) & 0xF);
-    if (displ_family == 0x06 || displ_family == 0x0F) {
-        displ_model += ((eax >> 12) & 0xF0);
-    }
-    print_user_verbose("DisplayFamily_DisplayModel: %.2X_%.2XH\n", displ_family, displ_model);
-    print_user_verbose("Stepping ID: %u\n", (eax & 0xF));
-
-    if (strcmp(proc_vendor_string, "GenuineIntel") == 0) {
-        is_Intel_CPU = 1;
-
-        __cpuid(0x0A, eax, ebx, ecx, edx);
-        unsigned int perf_mon_ver = (eax & 0xFF);
-        print_user_verbose("Performance monitoring version: %u\n", perf_mon_ver);
-        if (perf_mon_ver < 2) {
-            print_error("Error: performance monitoring version >= 2 required\n");
-            return 1;
+        __cpuid(0x01, eax, ebx, ecx, edx);
+        unsigned int displ_family = ((eax >> 8) & 0xF);
+        if (displ_family == 0x0F) {
+            displ_family += ((eax >> 20) & 0xFF);
         }
+        unsigned int displ_model = ((eax >> 4) & 0xF);
+        if (displ_family == 0x06 || displ_family == 0x0F) {
+            displ_model += ((eax >> 12) & 0xF0);
+        }
+        print_user_verbose("DisplayFamily_DisplayModel: %.2X_%.2XH\n", displ_family, displ_model);
+        print_user_verbose("Stepping ID: %u\n", (eax & 0xF));
 
-        unsigned int n_available_counters = ((eax >> 8) & 0xFF);
-        print_user_verbose("Number of general-purpose performance counters: %u\n", n_available_counters);
-        if (n_available_counters >= 4) {
-            n_programmable_counters = 4;
-        } else if (n_available_counters >= 2) {
-            n_programmable_counters = 2;
+        if (strcmp(proc_vendor_string, "GenuineIntel") == 0) {
+            is_Intel_CPU = 1;
+
+            __cpuid(0x0A, eax, ebx, ecx, edx);
+            unsigned int perf_mon_ver = (eax & 0xFF);
+            print_user_verbose("Performance monitoring version: %u\n", perf_mon_ver);
+            if (perf_mon_ver < 2) {
+                print_error("Error: performance monitoring version >= 2 required\n");
+                return 1;
+            }
+
+            unsigned int n_available_counters = ((eax >> 8) & 0xFF);
+            print_user_verbose("Number of general-purpose performance counters: %u\n", n_available_counters);
+            if (n_available_counters >= 4) {
+                n_programmable_counters = 4;
+            } else if (n_available_counters >= 2) {
+                n_programmable_counters = 2;
+            } else {
+                print_error("Error: only %u programmable counters available; nanoBench requires at least 2\n", n_available_counters);
+                return 1;
+            }
+
+            print_user_verbose("Bit widths of general-purpose performance counters: %u\n", ((eax >> 16) & 0xFF));
+
+        } else if (strcmp(proc_vendor_string, "AuthenticAMD") == 0) {
+            is_AMD_CPU = 1;
+            n_programmable_counters = 6;
         } else {
-            print_error("Error: only %u programmable counters available; nanoBench requires at least 2\n", n_available_counters);
+            print_error("Error: unsupported CPU found\n");
             return 1;
         }
-
-        print_user_verbose("Bit widths of general-purpose performance counters: %u\n", ((eax >> 16) & 0xFF));
-
-    } else if (strcmp(proc_vendor_string, "AuthenticAMD") == 0) {
-        is_AMD_CPU = 1;
-        n_programmable_counters = 6;
-    } else {
-        print_error("Error: unsupported CPU found\n");
-        return 1;
-    }
-
-    return 0;
+        return 0;
+    #endif
 }
-
-#endif
 
 void parse_counter_configs() {
     n_pfc_configs = 0;
@@ -184,62 +180,62 @@ void parse_counter_configs() {
             continue;
         }
 
-#if !defined(__aarch64__)
+        #if !defined(__aarch64__)
 
-        char* umask = strsep(&tok, ".");
-        nb_strtoul(umask, 16, &(pfc_configs[n_pfc_configs].umask));
+            char* umask = strsep(&tok, ".");
+            nb_strtoul(umask, 16, &(pfc_configs[n_pfc_configs].umask));
 
-        char* ce;
-        while ((ce = strsep(&tok, ".")) != NULL) {
-            if (!strcmp(ce, "AnyT")) {
-                pfc_configs[n_pfc_configs].any = 1;
-            } else if (!strcmp(ce, "EDG")) {
-                pfc_configs[n_pfc_configs].edge = 1;
-            } else if (!strcmp(ce, "INV")) {
-                pfc_configs[n_pfc_configs].inv = 1;
-            } else if (!strncmp(ce, "CTR=", 4)) {
-                unsigned long counter;
-                nb_strtoul(ce+4, 0, &counter);
-                if (counter > n_programmable_counters) {
-                    print_error("invalid counter: %s\n", ce);
-                    continue;
+            char* ce;
+            while ((ce = strsep(&tok, ".")) != NULL) {
+                if (!strcmp(ce, "AnyT")) {
+                    pfc_configs[n_pfc_configs].any = 1;
+                } else if (!strcmp(ce, "EDG")) {
+                    pfc_configs[n_pfc_configs].edge = 1;
+                } else if (!strcmp(ce, "INV")) {
+                    pfc_configs[n_pfc_configs].inv = 1;
+                } else if (!strncmp(ce, "CTR=", 4)) {
+                    unsigned long counter;
+                    nb_strtoul(ce+4, 0, &counter);
+                    if (counter > n_programmable_counters) {
+                        print_error("invalid counter: %s\n", ce);
+                        continue;
+                    }
+                    size_t prev_n_pfc_configs = n_pfc_configs;
+                    while (n_pfc_configs % n_programmable_counters != counter) {
+                        pfc_configs[n_pfc_configs].invalid = 1;
+                        n_pfc_configs++;
+                    }
+                    if (prev_n_pfc_configs != n_pfc_configs) {
+                        pfc_configs[n_pfc_configs] = pfc_configs[prev_n_pfc_configs];
+                        pfc_configs[n_pfc_configs].invalid = 0;
+                    }
+                } else if (!strncmp(ce, "CMSK=", 5)) {
+                    nb_strtoul(ce+5, 0, &(pfc_configs[n_pfc_configs].cmask));
+                } else if (!strncmp(ce, "MSR_3F6H=", 9)) {
+                    nb_strtoul(ce+9, 0, &(pfc_configs[n_pfc_configs].msr_3f6h));
+                } else if (!strncmp(ce, "MSR_PF=", 7)) {
+                    nb_strtoul(ce+7, 0, &(pfc_configs[n_pfc_configs].msr_pf));
+                } else if (!strncmp(ce, "MSR_RSP0=", 9)) {
+                    nb_strtoul(ce+9, 0, &(pfc_configs[n_pfc_configs].msr_rsp0));
+                } else if (!strncmp(ce, "MSR_RSP1=", 9)) {
+                    nb_strtoul(ce+9, 0, &(pfc_configs[n_pfc_configs].msr_rsp1));
                 }
-                size_t prev_n_pfc_configs = n_pfc_configs;
-                while (n_pfc_configs % n_programmable_counters != counter) {
-                    pfc_configs[n_pfc_configs].invalid = 1;
-                    n_pfc_configs++;
-                }
-                if (prev_n_pfc_configs != n_pfc_configs) {
-                    pfc_configs[n_pfc_configs] = pfc_configs[prev_n_pfc_configs];
-                    pfc_configs[n_pfc_configs].invalid = 0;
-                }
-            } else if (!strncmp(ce, "CMSK=", 5)) {
-                nb_strtoul(ce+5, 0, &(pfc_configs[n_pfc_configs].cmask));
-            } else if (!strncmp(ce, "MSR_3F6H=", 9)) {
-                nb_strtoul(ce+9, 0, &(pfc_configs[n_pfc_configs].msr_3f6h));
-            } else if (!strncmp(ce, "MSR_PF=", 7)) {
-                nb_strtoul(ce+7, 0, &(pfc_configs[n_pfc_configs].msr_pf));
-            } else if (!strncmp(ce, "MSR_RSP0=", 9)) {
-                nb_strtoul(ce+9, 0, &(pfc_configs[n_pfc_configs].msr_rsp0));
-            } else if (!strncmp(ce, "MSR_RSP1=", 9)) {
-                nb_strtoul(ce+9, 0, &(pfc_configs[n_pfc_configs].msr_rsp1));
             }
-        }
-#else // aarch64
-        char* sub_evt_num = strsep(&tok, " ");
-        if (strncmp(sub_evt_num, "00", 2) != 0) {
-            nb_strtoul(sub_evt_num, 16, &(pfc_configs[n_pfc_configs + 1].evt_num));
-            pfc_configs[n_pfc_configs].subtrahend = pfc_configs + n_pfc_configs + 1;
-            pfc_configs[n_pfc_configs].complex = 1;
-            pfc_configs[n_pfc_configs].sub_evt = 0;
-            pfc_configs[n_pfc_configs + 1].complex = 0;
-            pfc_configs[n_pfc_configs + 1].sub_evt = 1;
-            n_pfc_configs++;
-        } else {
-            pfc_configs[n_pfc_configs].complex = 0;
-            pfc_configs[n_pfc_configs].sub_evt = 0;
-        }
-#endif
+        #else // aarch64
+            char* sub_evt_num = strsep(&tok, " ");
+            if (strncmp(sub_evt_num, "00", 2) != 0) {
+                nb_strtoul(sub_evt_num, 16, &(pfc_configs[n_pfc_configs + 1].evt_num));
+                pfc_configs[n_pfc_configs].subtrahend = pfc_configs + n_pfc_configs + 1;
+                pfc_configs[n_pfc_configs].complex = 1;
+                pfc_configs[n_pfc_configs].sub_evt = 0;
+                pfc_configs[n_pfc_configs + 1].complex = 0;
+                pfc_configs[n_pfc_configs + 1].sub_evt = 1;
+                n_pfc_configs++;
+            } else {
+                pfc_configs[n_pfc_configs].complex = 0;
+                pfc_configs[n_pfc_configs].sub_evt = 0;
+            }
+        #endif
         n_pfc_configs++;
     }
 }
@@ -490,18 +486,18 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
             rcI += code_init_length;
 
             if (local_loop_count > 0) {
-#if !defined(__aarch64__)                
-                runtime_code[rcI++] = '\x49'; runtime_code[rcI++] = '\xC7'; runtime_code[rcI++] = '\xC7';
-                *(int32_t*)(&runtime_code[rcI]) = (int32_t)local_loop_count; rcI += 4; // mov R15, local_loop_count
-#else           
-                // movk x15, (local_loop_count >> 16), lsl 16
-                int32_t movk_bytes = 0xF2A0000F | ((local_loop_count & 0xFFFF0000) >> 11);
-                *(int32_t*)(&runtime_code[rcI]) = movk_bytes; rcI += 4;
-                // movk x15, (local_loop_count & 0xFFFF)
-                movk_bytes = 0xF280000F | ((local_loop_count & 0xFFFF) << 5);
-                *(int32_t*)(&runtime_code[rcI]) = movk_bytes; rcI += 4;
-                // x15 = local_loop_count
-#endif 
+                #if !defined(__aarch64__)                
+                    runtime_code[rcI++] = '\x49'; runtime_code[rcI++] = '\xC7'; runtime_code[rcI++] = '\xC7';
+                    *(int32_t*)(&runtime_code[rcI]) = (int32_t)local_loop_count; rcI += 4; // mov R15, local_loop_count
+                #else           
+                    // movk x15, (local_loop_count >> 16), lsl 16
+                    int32_t movk_bytes = 0xF2A0000F | ((local_loop_count & 0xFFFF0000) >> 11);
+                    *(int32_t*)(&runtime_code[rcI]) = movk_bytes; rcI += 4;
+                    // movk x15, (local_loop_count & 0xFFFF)
+                    movk_bytes = 0xF280000F | ((local_loop_count & 0xFFFF) << 5);
+                    *(int32_t*)(&runtime_code[rcI]) = movk_bytes; rcI += 4;
+                    // x15 = local_loop_count
+                #endif 
             }
 
             size_t dist = get_distance_to_code(measurement_template, templateI);
@@ -550,24 +546,24 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
 
             if (unrollI >= local_unroll_count) {
                 if (local_loop_count > 0) {
-#if !defined(__aarch64__)                    
-                    runtime_code[rcI++] = '\x49'; runtime_code[rcI++] = '\xFF'; runtime_code[rcI++] = '\xCF'; // dec R15
-                    runtime_code[rcI++] = '\x0F'; runtime_code[rcI++] = '\x85';
-                    *(int32_t*)(&runtime_code[rcI]) = (int32_t)(rcI_code_start-rcI-4); rcI += 4; // jnz loop_start
-#else
-                    *(int32_t*)(&runtime_code[rcI]) = 0xF10005EF; // subs x15, x15, 1
-                    rcI += 4;
-                    int32_t offs = ~((rcI - rcI_code_start - 1) >> 2);
-                    int32_t branch_bytes = 0x54000001 | (offs & 0x7FFFF) << 5;
-                    *(int32_t*)(&runtime_code[rcI]) = branch_bytes; // b.ne loop_start
-                    rcI += 4;
-#endif
+                    #if !defined(__aarch64__)                    
+                        runtime_code[rcI++] = '\x49'; runtime_code[rcI++] = '\xFF'; runtime_code[rcI++] = '\xCF'; // dec R15
+                        runtime_code[rcI++] = '\x0F'; runtime_code[rcI++] = '\x85';
+                        *(int32_t*)(&runtime_code[rcI]) = (int32_t)(rcI_code_start-rcI-4); rcI += 4; // jnz loop_start
+                    #else
+                        *(int32_t*)(&runtime_code[rcI]) = 0xF10005EF; // subs x15, x15, 1
+                        rcI += 4;
+                        int32_t offs = ~((rcI - rcI_code_start - 1) >> 2);
+                        int32_t branch_bytes = 0x54000001 | (offs & 0x7FFFF) << 5;
+                        *(int32_t*)(&runtime_code[rcI]) = branch_bytes; // b.ne loop_start
+                        rcI += 4;
+                    #endif
                 }
-#ifndef __aarch64__
-                if (debug) {
-                    runtime_code[rcI++] = '\xCC'; // INT3
-                }
-#endif                
+                #ifndef __aarch64__
+                    if (debug) {
+                        runtime_code[rcI++] = '\xCC'; // INT3
+                    }
+                #endif                
             }
         } else if (starts_with_magic_bytes(&measurement_template[templateI], MAGIC_BYTES_PFC_END)) {
             if (unrollI < local_unroll_count) {
@@ -605,16 +601,16 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
         continue_outer_loop: ;
     }
     templateI += 8;
-#if !defined(__aarch64__)
-    do {
-        runtime_code[rcI++] = measurement_template[templateI++];
-    } while (measurement_template[templateI-1] != '\xC3'); // 0xC3 = ret
-#else
-    while (*(int32_t*)(measurement_template + templateI) != RET_BYTES) {
-        runtime_code[rcI++] = measurement_template[templateI++];
-    }
-    *(int32_t*)(runtime_code + rcI) = *(int32_t*)(measurement_template + templateI); // ret
-#endif
+    #if !defined(__aarch64__)
+        do {
+            runtime_code[rcI++] = measurement_template[templateI++];
+        } while (measurement_template[templateI-1] != '\xC3'); // 0xC3 = ret
+    #else
+        while (*(int32_t*)(measurement_template + templateI) != RET_BYTES) {
+            runtime_code[rcI++] = measurement_template[templateI++];
+        }
+        *(int32_t*)(runtime_code + rcI) = *(int32_t*)(measurement_template + templateI); // ret
+    #endif
 }
 
 void create_and_run_one_time_init_code() {
@@ -652,16 +648,16 @@ void create_and_run_one_time_init_code() {
         }
     }
     templateI += 8;
-#if !defined(__aarch64__)
-    do {
-        runtime_one_time_init_code[rcI++] = template[templateI++];
-    } while (template[templateI-1] != RET_BYTES); // ret
-#else
-    while (*(int32_t*)(template + templateI) != RET_BYTES) {
-        runtime_one_time_init_code[rcI++] = template[templateI++];
-    }
-    *(int32_t*)(runtime_one_time_init_code + rcI) = *(int32_t*)(template + templateI); // ret
-#endif
+    #if !defined(__aarch64__)
+        do {
+            runtime_one_time_init_code[rcI++] = template[templateI++];
+        } while (template[templateI-1] != RET_BYTES); // ret
+    #else
+        while (*(int32_t*)(template + templateI) != RET_BYTES) {
+            runtime_one_time_init_code[rcI++] = template[templateI++];
+        }
+        *(int32_t*)(runtime_one_time_init_code + rcI) = *(int32_t*)(template + templateI); // ret
+    #endif
 
     ((void(*)(void))runtime_one_time_init_code)();
 }
@@ -786,140 +782,140 @@ void print_all_measurement_results(int64_t* results[], int n_counters) {
 
 #ifdef __aarch64__
 
-    long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags) {
-        return syscall(SYS_perf_event_open, attr, pid, cpu, groupfd, flags);
+long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags) {
+    return syscall(SYS_perf_event_open, attr, pid, cpu, groupfd, flags);
+}
+
+int setup_perf_event() {
+    struct perf_event_attr event = {
+        .size = sizeof(event),
+        .type = PERF_TYPE_RAW,
+        .config = pfc_configs[0].evt_num,
+        .read_format = PERF_FORMAT_GROUP,
+        .exclude_kernel = 1,
+        .exclude_hv = 1,
+        .pinned = 1,
+        .disabled = 1
+    };
+
+    int fd = 0;
+
+    if (fd = perf_event_open(&event, 0, -1, -1, 0) < 0) {
+        print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
+        exit(1);
     }
 
-    int setup_perf_event() {
-        struct perf_event_attr event = {
-            .size = sizeof(event),
-            .type = PERF_TYPE_RAW,
-            .config = pfc_configs[0].evt_num,
-            .read_format = PERF_FORMAT_GROUP,
-            .exclude_kernel = 1,
-            .exclude_hv = 1,
-            .pinned = 1,
-            .disabled = 1
-        };
+    event.disabled = 0;
+    event.pinned = 0;
 
-        int fd = 0;
-
-        if (fd = perf_event_open(&event, 0, -1, -1, 0) < 0) {
+    for (int config_i = 1; config_i < n_pfc_configs; config_i++) {
+        event.config = pfc_configs[config_i].evt_num;
+        if (perf_event_open(&event, 0, -1, fd, 0) < 0) {
             print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
             exit(1);
         }
-
-        event.disabled = 0;
-        event.pinned = 0;
-
-        for (int config_i = 1; config_i < n_pfc_configs; config_i++) {
-            event.config = pfc_configs[config_i].evt_num;
-            if (perf_event_open(&event, 0, -1, fd, 0) < 0) {
-                print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
-                exit(1);
-            }
-        }
-
-        return fd;
     }
 
-    void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd) {
-        create_runtime_code(measurement_template, local_unroll_count, local_loop_count);
+    return fd;
+}
 
-        if (ioctl(fd, PERF_EVENT_IOC_ENABLE, PERF_IOC_FLAG_GROUP) < 0) {
-            print_error("ioctl failed. Can't enable perf counting.");
-            exit(1);
-        }
+void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd) {
+    create_runtime_code(measurement_template, local_unroll_count, local_loop_count);
 
-        for (long ri=-warm_up_count; ri<n_measurements; ri++) {
-            if (ioctl(fd, PERF_EVENT_IOC_RESET, PERF_IOC_FLAG_GROUP) < 0) {
-                print_error("ioctl failed. Can't reset perf counters.");
-                exit(1);
-            }
-            ((void(*)(void))runtime_code)();
-
-            // ignore "warm-up" runs (ri<0), but don't execute different branches
-            long ri_ = (ri>=0) ? ri : 0;
-            read(fd, results[ri_], (n_pfc_configs + 1) * sizeof(uint64_t));
-        }
-
-        if (ioctl(fd, PERF_EVENT_IOC_DISABLE, PERF_IOC_FLAG_GROUP) < 0) {
-            print_error("ioctl failed. Can't enable perf counting.");
-            exit(1);
-        }
+    if (ioctl(fd, PERF_EVENT_IOC_ENABLE, PERF_IOC_FLAG_GROUP) < 0) {
+        print_error("ioctl failed. Can't enable perf counting.");
+        exit(1);
     }
 
-    void print_all_perf_measurement_results(int64_t* results[]) {
-        int run_padding = (n_measurements<=10?1:(n_measurements<=100?2:(n_measurements<=1000?3:4)));
+    for (long ri=-warm_up_count; ri<n_measurements; ri++) {
+        if (ioctl(fd, PERF_EVENT_IOC_RESET, PERF_IOC_FLAG_GROUP) < 0) {
+            print_error("ioctl failed. Can't reset perf counters.");
+            exit(1);
+        }
+        ((void(*)(void))runtime_code)();
 
-        size_t size = 120;
-        char buf[size];
+        // ignore "warm-up" runs (ri<0), but don't execute different branches
+        long ri_ = (ri>=0) ? ri : 0;
+        read(fd, results[ri_], (n_pfc_configs + 1) * sizeof(uint64_t));
+    }
 
-        sprintf(buf, "\tevt_num%*s", run_padding, "");
+    if (ioctl(fd, PERF_EVENT_IOC_DISABLE, PERF_IOC_FLAG_GROUP) < 0) {
+        print_error("ioctl failed. Can't enable perf counting.");
+        exit(1);
+    }
+}
+
+void print_all_perf_measurement_results(int64_t* results[]) {
+    int run_padding = (n_measurements<=10?1:(n_measurements<=100?2:(n_measurements<=1000?3:4)));
+
+    size_t size = 120;
+    char buf[size];
+
+    sprintf(buf, "\tevt_num%*s", run_padding, "");
+    for (int c = 0; c < n_pfc_configs; c++) {
+        sprintf(buf + strlen(buf), "       %c%#X", 
+            pfc_configs[c].sub_evt ? '-' : " ",
+            pfc_configs[c].evt_num);
+    }
+    print_verbose("%s\n", buf);
+
+    for (int i = 0; i < n_measurements; i++) {
+        sprintf(buf, "\trun %*d:  ", run_padding, i);
         for (int c = 0; c < n_pfc_configs; c++) {
-            sprintf(buf + strlen(buf), "       %c%#X", 
-                pfc_configs[c].sub_evt ? '-' : " ",
-                pfc_configs[c].evt_num);
+            sprintf(buf +strlen(buf), "%9lld", (long long)results[i][c + 1]);
         }
         print_verbose("%s\n", buf);
+    }
+    print_verbose("\n")
+}
 
-        for (int i = 0; i < n_measurements; i++) {
-            sprintf(buf, "\trun %*d:  ", run_padding, i);
-            for (int c = 0; c < n_pfc_configs; c++) {
-                sprintf(buf +strlen(buf), "%9lld", (long long)results[i][c + 1]);
-            }
-            print_verbose("%s\n", buf);
+void compute_perf_result_agg_100(int64_t* results[], int64_t* agg_results) {
+    int64_t* values = (int64_t*)malloc(sizeof(values[0]) * n_measurements);
+
+    for (int c = 0; c < n_pfc_configs; c++) {
+        if (pfc_configs[c].sub_evt) {
+            continue;
         }
-        print_verbose("\n")
+        if (pfc_configs[c].complex) {
+            for (int m = 0; m < n_measurements; m++) {
+                values[m] = results[m][c + 1] - results[m][c + 2];
+            }
+        } else {
+            for (int m = 0; m < n_measurements; m++) {
+                values[m] = results[m][c + 1];
+            }
+        }
+        agg_results[c] = get_aggregate_value_100(values, n_measurements);
     }
 
-    void compute_perf_result_agg_100(int64_t* results[], int64_t* agg_results) {
-        int64_t* values = (int64_t*)malloc(sizeof(values[0]) * n_measurements);
+    free(values);
+}
+
+void dump_perf_result(const char* filename) {
+        int64_t* agg = (int64_t*)malloc(sizeof(agg[0]) * n_pfc_configs);
+        int64_t* agg_base = (int64_t*)malloc(sizeof(agg_base[0]) * n_pfc_configs);
+        FILE* file = fopen(filename, "wb");
+
+        compute_perf_result_agg_100(measurement_results, agg);
+        compute_perf_result_agg_100(measurement_results_base, agg_base);
+
+        int64_t n_rep = loop_count * unroll_count;
+        if (loop_count == 0) {
+            n_rep = unroll_count;
+        }
 
         for (int c = 0; c < n_pfc_configs; c++) {
             if (pfc_configs[c].sub_evt) {
                 continue;
             }
-            if (pfc_configs[c].complex) {
-                for (int m = 0; m < n_measurements; m++) {
-                    values[m] = results[m][c + 1] - results[m][c + 2];
-                }
-            } else {
-                for (int m = 0; m < n_measurements; m++) {
-                    values[m] = results[m][c + 1];
-                }
-            }
-            agg_results[c] = get_aggregate_value_100(values, n_measurements);
+            int64_t result = ((agg[c] - agg_base[c]) + n_rep / 2) / n_rep;
+            fprintf(file, "%s: %s%lld.%.2lld\n", pfc_configs[c].description, (result<0?"-":""), ll_abs(result/100), ll_abs(result)%100);
         }
 
-        free(values);
-    }
-
-    void dump_perf_result(const char* filename) {
-            int64_t* agg = (int64_t*)malloc(sizeof(agg[0]) * n_pfc_configs);
-            int64_t* agg_base = (int64_t*)malloc(sizeof(agg_base[0]) * n_pfc_configs);
-            FILE* file = fopen(filename, "wb");
-
-            compute_perf_result_agg_100(measurement_results, agg);
-            compute_perf_result_agg_100(measurement_results_base, agg_base);
-
-            int64_t n_rep = loop_count * unroll_count;
-            if (loop_count == 0) {
-                n_rep = unroll_count;
-            }
-
-            for (int c = 0; c < n_pfc_configs; c++) {
-                if (pfc_configs[c].sub_evt) {
-                    continue;
-                }
-                int64_t result = ((agg[c] - agg_base[c]) + n_rep / 2) / n_rep;
-                fprintf(file, "%s: %s%lld.%.2lld\n", pfc_configs[c].description, (result<0?"-":""), ll_abs(result/100), ll_abs(result)%100);
-            }
-
-            fclose(file);
-            free(agg);
-            free(agg_base);
-    }
+        fclose(file);
+        free(agg);
+        free(agg_base);
+}
 
 #endif
 

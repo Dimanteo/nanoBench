@@ -71,12 +71,12 @@ int main(int argc, char **argv) {
     int os = 0;
 
     struct option long_opts[] = {
-#ifndef __aarch64__
-        {"code", required_argument, 0, 'c'},
-        {"code_init", required_argument, 0, 'i'},
-        {"code_one_time_init", required_argument, 0, 'o'},
-        {"config", required_argument, 0, 'f'},
-#endif
+    #ifndef __aarch64__
+            {"code", required_argument, 0, 'c'},
+            {"code_init", required_argument, 0, 'i'},
+            {"code_one_time_init", required_argument, 0, 'o'},
+            {"config", required_argument, 0, 'f'},
+    #endif
         {"output", required_argument, 0, 't'},
         {"n_measurements", required_argument, 0, 'n'},
         {"unroll_count", required_argument, 0, 'u'},
@@ -92,26 +92,20 @@ int main(int argc, char **argv) {
         {"no_mem", no_argument, &no_mem, 1},
         {"verbose", no_argument, &verbose, 1},
         {"cpu", required_argument, 0, 'p'},
-#ifndef __aarch64__        
-        {"usr", required_argument, 0, 'r'},
-        {"os", required_argument, 0, 's'},
-        {"debug", no_argument, &debug, 1},   
-        {"help", no_argument, 0, 'h'},
-#endif
+    #ifndef __aarch64__        
+            {"usr", required_argument, 0, 'r'},
+            {"os", required_argument, 0, 's'},
+            {"debug", no_argument, &debug, 1},   
+            {"help", no_argument, 0, 'h'},
+    #endif
         {0, 0, 0, 0}
     };
-#ifdef __aarch64__
-    code_length = mmap_file("code.bin", &code);
-    code_init_length = mmap_file("init.bin", &code_init);
-    code_one_time_init_length = mmap_file("one_time_init.bin", &code_one_time_init);
-    config_file_name = "config";
-#endif
+    
     int option = 0;
     while ((option = getopt_long_only(argc, argv, "", long_opts, NULL)) != -1) {
         switch (option) {
             case 0:
                 break;
-#ifndef __aarch64__
             case 'c':
                 code_length = mmap_file(optarg, &code);
                 break;
@@ -124,7 +118,6 @@ int main(int argc, char **argv) {
             case 'f': ;
                 config_file_name = optarg;
                 break;
-#endif
             case 't':
                 output_file_name = optarg;
             case 'n':
@@ -152,14 +145,14 @@ int main(int argc, char **argv) {
             case 'p':
                 cpu = atol(optarg);
                 break;
-#ifndef __aarch64__
-            case 'r':
-                usr = atoi(optarg);
-                break;
-            case 's':
-                os = atoi(optarg);
-                break;
-#endif
+            #ifndef __aarch64__
+                case 'r':
+                    usr = atoi(optarg);
+                    break;
+                case 's':
+                    os = atoi(optarg);
+                    break;
+            #endif
             default:
                 #ifndef __aarch64__
                     print_usage();
@@ -239,31 +232,31 @@ int main(int argc, char **argv) {
     runtime_rsi += RUNTIME_R_SIZE/2;
     runtime_rsp += RUNTIME_R_SIZE/2;
 
-#if !defined(__aarch64__)
-    for (int i=0; i<MAX_PROGRAMMABLE_COUNTERS; i++) {
-        measurement_results[i] = malloc(n_measurements*sizeof(int64_t));
-        measurement_results_base[i] = malloc(n_measurements*sizeof(int64_t));
-        if (!measurement_results[i] || !measurement_results_base[i]) {
+    #if !defined(__aarch64__)
+        for (int i=0; i<MAX_PROGRAMMABLE_COUNTERS; i++) {
+            measurement_results[i] = malloc(n_measurements*sizeof(int64_t));
+            measurement_results_base[i] = malloc(n_measurements*sizeof(int64_t));
+            if (!measurement_results[i] || !measurement_results_base[i]) {
+                fprintf(stderr, "Error: Could not allocate memory for measurement_results\n");
+                return 1;
+            }
+        }
+    #else
+        measurement_results = (int64_t**)malloc(n_measurements * sizeof(measurement_results[0])); 
+        measurement_results_base = (int64_t**)malloc(n_measurements * sizeof(measurement_results_base[0]));
+        if (!measurement_results || !measurement_results_base) {
             fprintf(stderr, "Error: Could not allocate memory for measurement_results\n");
             return 1;
         }
-    }
-#else
-    measurement_results = (int64_t**)malloc(n_measurements * sizeof(measurement_results[0])); 
-    measurement_results_base = (int64_t**)malloc(n_measurements * sizeof(measurement_results_base[0]));
-    if (!measurement_results || !measurement_results_base) {
-        fprintf(stderr, "Error: Could not allocate memory for measurement_results\n");
-        return 1;
-    }
-    for (int i = 0; i < n_measurements; i++) {
-        measurement_results[i] = malloc((n_pfc_configs + 1) * sizeof(uint64_t)); // see struct read_format in man perf_event_open
-        measurement_results_base[i] = malloc((n_pfc_configs + 1) * sizeof(uint64_t));
-        if (!measurement_results[i] || !measurement_results_base[i]) {
-            fprintf(stderr, "Error: Could not allocate memory for measurement_results\n");
-            return 1;
+        for (int i = 0; i < n_measurements; i++) {
+            measurement_results[i] = malloc((n_pfc_configs + 1) * sizeof(uint64_t)); // see struct read_format in man perf_event_open
+            measurement_results_base[i] = malloc((n_pfc_configs + 1) * sizeof(uint64_t));
+            if (!measurement_results[i] || !measurement_results_base[i]) {
+                fprintf(stderr, "Error: Could not allocate memory for measurement_results\n");
+                return 1;
+            }
         }
-    }
-#endif
+    #endif
 
     /*************************************
      * Fixed-function counters
@@ -342,52 +335,52 @@ int main(int argc, char **argv) {
     /*************************************
      * Programmable counters
      ************************************/
-#ifndef __aarch64__
-    if (is_AMD_CPU) {
-        if (no_mem) {
-            measurement_template = (char*)&measurement_template_AMD_noMem;
-        } else {
-            measurement_template = (char*)&measurement_template_AMD;
-        }
-    } else {
-        if (no_mem) {
-            if (n_programmable_counters >= 4) {
-                measurement_template = (char*)&measurement_template_Intel_noMem_4;
+    #ifndef __aarch64__
+        if (is_AMD_CPU) {
+            if (no_mem) {
+                measurement_template = (char*)&measurement_template_AMD_noMem;
             } else {
-                measurement_template = (char*)&measurement_template_Intel_noMem_2;
+                measurement_template = (char*)&measurement_template_AMD;
             }
         } else {
-            if (n_programmable_counters >= 4) {
-                measurement_template = (char*)&measurement_template_Intel_4;
+            if (no_mem) {
+                if (n_programmable_counters >= 4) {
+                    measurement_template = (char*)&measurement_template_Intel_noMem_4;
+                } else {
+                    measurement_template = (char*)&measurement_template_Intel_noMem_2;
+                }
             } else {
-                measurement_template = (char*)&measurement_template_Intel_2;
+                if (n_programmable_counters >= 4) {
+                    measurement_template = (char*)&measurement_template_Intel_4;
+                } else {
+                    measurement_template = (char*)&measurement_template_Intel_2;
+                }
             }
         }
-    }
 
-    for (size_t i=0; i<n_pfc_configs; i+=n_programmable_counters) {
-        size_t end = i + n_programmable_counters;
-        if (end > n_pfc_configs) {
-            end = n_pfc_configs;
+        for (size_t i=0; i<n_pfc_configs; i+=n_programmable_counters) {
+            size_t end = i + n_programmable_counters;
+            if (end > n_pfc_configs) {
+                end = n_pfc_configs;
+            }
+
+            configure_perf_ctrs_programmable(i, end, usr, os);
+
+            run_experiment(measurement_template, measurement_results_base, n_programmable_counters, base_unroll_count, base_loop_count);
+            run_experiment(measurement_template, measurement_results, n_programmable_counters, main_unroll_count, main_loop_count);
+
+            if (verbose) {
+                printf("\nProgrammable counter results (unroll_count=%ld, loop_count=%ld):\n\n", base_unroll_count, base_loop_count);
+                print_all_measurement_results(measurement_results_base, n_programmable_counters);
+                printf("Programmable counter results (unroll_count=%ld, loop_count=%ld):\n\n", main_unroll_count, main_loop_count);
+                print_all_measurement_results(measurement_results, n_programmable_counters);
+            }
+
+            for (int c=0; c < n_programmable_counters && i + c < n_pfc_configs; c++) {
+                if (!pfc_configs[i+c].invalid) printf("%s", compute_result_str(buf, sizeof(buf), pfc_configs[i+c].description, c));
+            }
         }
-
-        configure_perf_ctrs_programmable(i, end, usr, os);
-
-        run_experiment(measurement_template, measurement_results_base, n_programmable_counters, base_unroll_count, base_loop_count);
-        run_experiment(measurement_template, measurement_results, n_programmable_counters, main_unroll_count, main_loop_count);
-
-        if (verbose) {
-            printf("\nProgrammable counter results (unroll_count=%ld, loop_count=%ld):\n\n", base_unroll_count, base_loop_count);
-            print_all_measurement_results(measurement_results_base, n_programmable_counters);
-            printf("Programmable counter results (unroll_count=%ld, loop_count=%ld):\n\n", main_unroll_count, main_loop_count);
-            print_all_measurement_results(measurement_results, n_programmable_counters);
-        }
-
-        for (int c=0; c < n_programmable_counters && i + c < n_pfc_configs; c++) {
-            if (!pfc_configs[i+c].invalid) printf("%s", compute_result_str(buf, sizeof(buf), pfc_configs[i+c].description, c));
-        }
-    }
-#endif
+    #endif
     /*************************************
      * Cleanup
      ************************************/

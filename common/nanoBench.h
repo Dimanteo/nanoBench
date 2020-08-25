@@ -198,11 +198,11 @@ extern int64_t pfc_mem[MAX_PROGRAMMABLE_COUNTERS];
 extern void* RSP_mem;
 
 #if !defined(__aarch64__)
-extern int64_t* measurement_results[MAX_PROGRAMMABLE_COUNTERS];
-extern int64_t* measurement_results_base[MAX_PROGRAMMABLE_COUNTERS];
+    extern int64_t* measurement_results[MAX_PROGRAMMABLE_COUNTERS];
+    extern int64_t* measurement_results_base[MAX_PROGRAMMABLE_COUNTERS];
 #else
-extern int64_t* measurement_results[];
-extern int64_t* measurement_results_base[];
+    extern int64_t* measurement_results[];
+    extern int64_t* measurement_results_base[];
 #endif
 
 // Process should be pinned to this CPU.
