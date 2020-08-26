@@ -71,12 +71,10 @@ int main(int argc, char **argv) {
     int os = 0;
 
     struct option long_opts[] = {
-    #ifndef __aarch64__
-            {"code", required_argument, 0, 'c'},
-            {"code_init", required_argument, 0, 'i'},
-            {"code_one_time_init", required_argument, 0, 'o'},
-            {"config", required_argument, 0, 'f'},
-    #endif
+        {"code", required_argument, 0, 'c'},
+        {"code_init", required_argument, 0, 'i'},
+        {"code_one_time_init", required_argument, 0, 'o'},
+        {"config", required_argument, 0, 'f'},
         {"output", required_argument, 0, 't'},
         {"n_measurements", required_argument, 0, 'n'},
         {"unroll_count", required_argument, 0, 'u'},
@@ -269,21 +267,23 @@ int main(int argc, char **argv) {
     char buf[100];
     char* measurement_template;
 
-    if (is_AMD_CPU) {
-        if (no_mem) {
-            measurement_template = (char*)&measurement_RDTSC_template_noMem;
-        } else {
-            measurement_template = (char*)&measurement_RDTSC_template;
+    #if !defined(__aarch64__)
+        if (is_AMD_CPU) {
+            if (no_mem) {
+                measurement_template = (char*)&measurement_RDTSC_template_noMem;
+            } else {
+                measurement_template = (char*)&measurement_RDTSC_template;
+            }
+        } else if (is_Intel_CPU) {
+            if (no_mem) {
+                measurement_template = (char*)&measurement_FF_template_Intel_noMem;
+            } else {
+                measurement_template = (char*)&measurement_FF_template_Intel;
+            }
         }
-    } else if (is_Intel_CPU) {
-        if (no_mem) {
-            measurement_template = (char*)&measurement_FF_template_Intel_noMem;
-        } else {
-            measurement_template = (char*)&measurement_FF_template_Intel;
-        }
-    } else {
+    #else
         measurement_template = (char*)&measurement_template_AARCH64;
-    }
+    #endif
 
     create_and_run_one_time_init_code();
     run_warmup_experiment(measurement_template);
@@ -301,7 +301,9 @@ int main(int argc, char **argv) {
 
         printf("%s", compute_result_str(buf, sizeof(buf), "RDTSC", 0));
     } else if (is_Intel_CPU) {
-        configure_perf_ctrs_FF(usr, os);
+        #ifndef __aarch64__
+            configure_perf_ctrs_FF(usr, os);
+        #endif
 
         run_experiment(measurement_template, measurement_results_base, 4, base_unroll_count, base_loop_count);
         run_experiment(measurement_template, measurement_results, 4, main_unroll_count, main_loop_count);

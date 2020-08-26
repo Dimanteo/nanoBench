@@ -28,11 +28,11 @@
 #include <cpuid.h>
 #endif
 
-//#ifdef __aarch64__
-#include <sys/syscall.h>
-#include <sys/ioctl.h>
-#include <linux/perf_event.h>
-//#endif
+#ifdef __aarch64__
+    #include <sys/syscall.h>
+    #include <sys/ioctl.h>
+    #include <linux/perf_event.h>
+#endif
 
 #ifdef __KERNEL__
     #define print_error(...) pr_debug(__VA_ARGS__)
@@ -201,8 +201,8 @@ extern void* RSP_mem;
     extern int64_t* measurement_results[MAX_PROGRAMMABLE_COUNTERS];
     extern int64_t* measurement_results_base[MAX_PROGRAMMABLE_COUNTERS];
 #else
-    extern int64_t* measurement_results[];
-    extern int64_t* measurement_results_base[];
+    extern int64_t** measurement_results;
+    extern int64_t** measurement_results_base;
 #endif
 
 // Process should be pinned to this CPU.
@@ -214,6 +214,8 @@ int check_cpuid(void);
 
 void parse_counter_configs(void);
 void parse_msr_configs(void);
+
+#ifndef __aarch64__
 
 uint64_t read_value_from_cmd(char* cmd);
 
@@ -228,6 +230,8 @@ void configure_perf_ctrs_FF(unsigned int usr, unsigned int os);
 void configure_perf_ctrs_programmable(int start, int end, unsigned int usr, unsigned int os);
 
 void configure_MSRs(struct msr_config config);
+
+#endif
 
 size_t get_required_runtime_code_length(void);
 

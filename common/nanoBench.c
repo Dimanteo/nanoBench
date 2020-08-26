@@ -62,8 +62,8 @@ void* RSP_mem;
     int64_t* measurement_results[MAX_PROGRAMMABLE_COUNTERS];
     int64_t* measurement_results_base[MAX_PROGRAMMABLE_COUNTERS];
 #else
-    int64_t* measurement_results[];
-    int64_t* measurement_results_base[];
+    int64_t** measurement_results;
+    int64_t** measurement_results_base;
 #endif
 
 int cpu = -1;
@@ -225,7 +225,6 @@ void parse_counter_configs() {
             char* sub_evt_num = strsep(&tok, " ");
             if (strncmp(sub_evt_num, "00", 2) != 0) {
                 nb_strtoul(sub_evt_num, 16, &(pfc_configs[n_pfc_configs + 1].evt_num));
-                pfc_configs[n_pfc_configs].subtrahend = pfc_configs + n_pfc_configs + 1;
                 pfc_configs[n_pfc_configs].complex = 1;
                 pfc_configs[n_pfc_configs].sub_evt = 0;
                 pfc_configs[n_pfc_configs + 1].complex = 0;
@@ -286,6 +285,8 @@ void parse_msr_configs() {
     }
 }
 #endif
+
+#ifndef __aarch64__
 
 #ifndef __KERNEL__
 uint64_t read_value_from_cmd(char* cmd) {
@@ -434,6 +435,8 @@ void configure_MSRs(struct msr_config config) {
     }
     cur_rdmsr = config.rdmsr;
 }
+
+#endif // __aarch64__
 
 size_t get_required_runtime_code_length() {
     size_t req_code_length = code_length + alignment_offset + 64;
@@ -923,6 +926,7 @@ int starts_with_magic_bytes(char* c, int64_t magic_bytes) {
     return (*((int64_t*)c) == magic_bytes);
 }
 
+#ifndef __aarch64__
 void measurement_template_Intel_2() {
     SAVE_REGS_FLAGS();
     asm(".quad "STRINGIFY(MAGIC_BYTES_INIT));
@@ -1717,6 +1721,7 @@ void measurement_RDMSR_template_noMem() {
     RESTORE_REGS_FLAGS();
     asm(".quad "STRINGIFY(MAGIC_BYTES_TEMPLATE_END));
 }
+#endif
 
 #ifdef __aarch64__
 void measurement_template_AARCH64() {

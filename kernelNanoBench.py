@@ -198,6 +198,11 @@ def adbRunNanoBench():
       adbPush(RAMDISK + 'config', REMOTEDIR)
    adbPush(AARCH64_BIN_PATH + 'nb', REMOTEDIR)
    query = [REMOTEDIR + 'nb']
+   query += ['-code', REMOTEDIR + 'code.bin']
+   query += ['-code_init', REMOTEDIR + 'init.bin']
+   query += ['-code_one_time_init', 'one_time_init.bin']
+   query += ['-config', REMOTEDIR + 'config']
+   query += ['-output', REMOTEDIR + 'adbres']
    query += ['-n_measurements', paramDict['nMeasurements']]
    query += ['-unroll_count', paramDict['unrollCount']]
    query += ['-loop_count', paramDict['loopCount']]
