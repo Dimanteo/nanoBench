@@ -5,7 +5,7 @@ import sys
 
 USING_ADB = False
 REMOTEDIR = '/data/local/tmp/'
-RAMDISK   = '/tmp/ramdisk/
+RAMDISK   = '/tmp/ramdisk/'
 AARCH64_BIN_PATH = '../../user/libs/arm64-v8a/'
 
 PFC_START_ASM = '.quad 0xE0b513b1C2813F04'

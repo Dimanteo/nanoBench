@@ -93,7 +93,7 @@ class CPUID(object):
         # Measurements performed on external device.
         # TODO call ADB cpuid hadler
         self.use_adb = use_adb
-        return
+        # return
 
         # Measurments on current x86 based machine
         if platform.machine() not in ("AMD64", "x86_64", "x86", "i686"):
