@@ -272,7 +272,7 @@ def getCodeForAddressLists(codeAddressLists, initAddressLists=[], wbinvd=False, 
       raise ValueError('same address in different lists')
 
    code = []
-   init = (['wbinvd; '] if wbinvd else [])
+   init = (['wbinvd; '] if wbinvd and not ADB_USING else [])
    oneTimeInit = []
 
    r14Size = getR14Size()
@@ -326,7 +326,10 @@ def getCodeForAddressLists(codeAddressLists, initAddressLists=[], wbinvd=False, 
                if not ADB_USING:
                   codeList.append('mov RCX, [R14 + ' + str(addresses[0]) + ']; ')
                else:
-                  codeList.append('ldr x2, [x14, ' + str(addresses[0]) + ']; ')
+                  # 16 bit limit for immidiate values in aarch64 assembly
+                  higherBits = (int(addresses[0]) & 0xffff0000) >> 16
+                  lowerBits = (int(addresses[0])) & 0x0000ffff
+                  codeList.append('movz x2, ' + str(higherBits) + ', lsl 16; movk x2, ' + str(lowerBits) +'; ldr x2, [x14, x2]; ')
             else:
                if not tuple(addresses) in alreadyAddedOneTimeInits:
                   oneTimeInit.append(getPointerChasingInit(addresses))

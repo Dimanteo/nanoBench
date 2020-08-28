@@ -2,11 +2,14 @@ import atexit
 import collections
 import subprocess
 import sys
+import os
 
 USING_ADB = False
 REMOTEDIR = '/data/local/tmp/'
 RAMDISK   = '/tmp/ramdisk/'
 AARCH64_BIN_PATH = '../../user/libs/arm64-v8a/'
+TOOLCHAIN = '/home/dimanteo/Home/AndroidDev/Sdk/ndk/21.0.6113669/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin/'
+ADB_PATH = '/home/dimanteo/Home/AndroidDev/Sdk/platform-tools/'
 
 PFC_START_ASM = '.quad 0xE0b513b1C2813F04'
 PFC_STOP_ASM = '.quad 0xF0b513b1C2813F04'
@@ -25,9 +28,9 @@ def assemble(code, objFile, asmFile='/tmp/ramdisk/asm.s'):
          code = '.arch armv8-a\n' + code + ';1:;\n'
          with open(asmFile, 'w') as f: f.write(code);
          # should add $NDK_DIR/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin to PATH variable
-         subprocess.check_call(['aarch64-linux-android-as', asmFile, '-o', objFile], shell=True)
+         subprocess.check_call([TOOLCHAIN + 'aarch64-linux-android-as', asmFile, '-o', objFile])
    except subprocess.CalledProcessError as e:
-      sys.stderr.write("Error (assemble): " + str(e))
+      sys.stderr.write('Error (assemble): ' + str(e) + '\n')
       sys.stderr.write(code)
       exit(1)
 
@@ -37,9 +40,9 @@ def objcopy(sourceFile, targetFile):
       if not USING_ADB:
          subprocess.check_call(['objcopy', sourceFile, '-O', 'binary', targetFile])
       else:
-         subprocess.check_call(['aarch64-linux-android-objcopy', sourceFile, '-O', 'binary', targetFile], shell=True)
+         subprocess.check_call([TOOLCHAIN + 'aarch64-linux-android-objcopy', sourceFile, '-O', 'binary', targetFile])
    except subprocess.CalledProcessError as e:
-      sys.stderr.write("Error (objcopy): " + str(e))
+      sys.stderr.write('Error (objcopy): ' + str(e) + '\n')
       exit(1)
 
 
@@ -63,7 +66,7 @@ def getR14Size():
 
 def adbPush(local, remote):
    try:
-      subprocess.check_call(['adb', 'push', local, remote], shell=True)
+      subprocess.call([ADB_PATH + 'adb', 'push', local, remote])
    except subprocess.CalledProcessError as e:
       sys.stderr.write(str(e.returncode) + ' ADB could not push ' + local + ' to ' + remote + ' ' + '\n')
       raise e
@@ -71,7 +74,7 @@ def adbPush(local, remote):
 
 def adbPull(remote, local):
    try:
-      subprocess.check_call(['adb', 'pull', remote, local], shell=True)
+      subprocess.call([ADB_PATH + 'adb', 'pull', remote, local])
    except subprocess.CalledProcessError as e:
       sys.stderr.write(str(e.returncode) + ' ADB could not pull ' + remote + ' to ' + local + '\n')
       raise e
@@ -79,7 +82,7 @@ def adbPull(remote, local):
 
 def adbExec(cmd):
    try:
-      output = subprocess.check_output(['adb', 'shell'] + cmd, shell=True)
+      output = subprocess.check_output([ADB_PATH + 'adb', 'shell'] + cmd)
       return output
    except subprocess.CalledProcessError as e:
       query = ''
@@ -190,30 +193,42 @@ def resetNanoBench(using_adb):
    paramDict.clear()
 
 
-def adbRunNanoBench():
-   adbPush(RAMDISK + 'code.bin', REMOTEDIR)
-   adbPush(RAMDISK + 'init.bin', REMOTEDIR)
-   adbPush(RAMDISK + 'one_time_init.bin', REMOTEDIR)
+def addToQuery(query, param, option, has_value=False):
+   if param in paramDict:
+      if has_value:
+         query += [option, str(paramDict[param])]
+      else:
+         query += [option]
+
+
+def adbRunNanoBench(hasCode, hasInit, hasOneTimeInit):
+   query = [REMOTEDIR + 'nb']
+   adbPush(AARCH64_BIN_PATH + 'nb', REMOTEDIR)
+   if hasCode:
+      adbPush(RAMDISK + 'code.bin', REMOTEDIR)
+      query += ['-code', REMOTEDIR + 'code.bin']
+   if hasInit:
+      adbPush(RAMDISK + 'init.bin', REMOTEDIR)
+      query += ['-code_init', REMOTEDIR + 'init.bin']
+   if hasOneTimeInit:
+      adbPush(RAMDISK + 'one_time_init.bin', REMOTEDIR)
+      query += ['-code_one_time_init', 'one_time_init.bin']
    if paramDict['config'] is not None:
       adbPush(RAMDISK + 'config', REMOTEDIR)
-   adbPush(AARCH64_BIN_PATH + 'nb', REMOTEDIR)
-   query = [REMOTEDIR + 'nb']
-   query += ['-code', REMOTEDIR + 'code.bin']
-   query += ['-code_init', REMOTEDIR + 'init.bin']
-   query += ['-code_one_time_init', 'one_time_init.bin']
-   query += ['-config', REMOTEDIR + 'config']
+      query += ['-config', REMOTEDIR + 'config']
+   
    query += ['-output', REMOTEDIR + 'adbres']
-   query += ['-n_measurements', paramDict['nMeasurements']]
-   query += ['-unroll_count', paramDict['unrollCount']]
-   query += ['-loop_count', paramDict['loopCount']]
-   query += ['-warm_up_count', paramDict['warmUpCount']]
-   query += ['-initial_warm_up_count', paramDict['initialWarmUpCount']]
-   query += ['-alignment_offset', paramDict['alignmentOffset']]
+   addToQuery(query, 'nMeasurements', '-n_measurements', True)
+   addToQuery(query, 'unrollCount', '-unroll_count', True)
+   addToQuery(query, 'loopCount', '-loop_count', True)
+   addToQuery(query, 'warmUpCount', '-warm_up_count', True)
+   addToQuery(query, 'initialWarmUpCount', '-initial_warm_up_count', True)
+   addToQuery(query, 'alignmentOffset', '-alignment_offset', True)
    query += ['-' + paramDict['aggregateFunction']]
-   query += ['-basic_mode', paramDict['basicMode']]
-   query += ['-no_mem', paramDict['noMem']]
+   addToQuery(query, 'basicMode', '-basic_mode')
+   addToQuery(query, 'noMem', '-no_mem')
    query += ['-cpu', '0']
-   query += ['-verbose', paramDict['verbose']]
+   addToQuery(query, 'verbose', '-verbose')
    adbExec(query)
    adbPull(REMOTEDIR + 'adbres', RAMDISK)
    adbExec(['rm', '-r', REMOTEDIR + '*'])
@@ -273,7 +288,10 @@ def runNanoBench(code='', codeObjFile=None, codeBinFile=None,
       with open('/proc/nanoBench') as resultFile:
          output = resultFile.read().split('\n')
    else:
-      output = adbRunNanoBench(paramDict).split('\n')
+      hasCode = bool(code) or bool(codeBinFile) or bool(codeObjFile)
+      hasInit = bool(init) or bool(initBinFile) or bool(initObjFile)
+      hasOneTimeInit = bool(oneTimeInit) or bool(oneTimeInitBinFile) or bool(oneTimeInitObjFile)
+      output = adbRunNanoBench(hasCode=hasCode, hasInit=hasInit, hasOneTimeInit=hasOneTimeInit).split('\n')
 
    ret = collections.OrderedDict()
    for line in output:
