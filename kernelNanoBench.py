@@ -231,7 +231,7 @@ def adbRunNanoBench(hasCode, hasInit, hasOneTimeInit):
    addToQuery(query, 'verbose', '-verbose')
    adbExec(query)
    adbPull(REMOTEDIR + 'adbres', RAMDISK)
-   adbExec(['rm', '-r', REMOTEDIR + '*'])
+   #adbExec(['rm', '-r', REMOTEDIR + '*'])
    with open(RAMDISK + 'adbres') as resultFile:
       return resultFile.read()
 

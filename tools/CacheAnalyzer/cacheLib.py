@@ -25,31 +25,31 @@ def getEventConfig(event):
       if arch in ['Core', 'EnhancedCore']: return '40.0E ' + event # L1D_CACHE_LD.MES
       if arch in ['NHM', 'WSM']: return 'CB.01 ' + event
       if arch in ['SNB', 'IVB', 'HSW', 'BDW', 'SKL', 'SKX', 'KBL', 'CFL', 'CNL', 'ICL']: return 'D1.01 ' + event
-      if arch in ['Cortex-A55']: return '04.03' + event # L1D_CACHE - L1D_CACHE_REFILL
+      if arch in ['Cortex-A55']: return '04.03 ' + event # L1D_CACHE - L1D_CACHE_REFILL
    if event == 'L1_MISS':
       if arch in ['Core', 'EnhancedCore']: return 'CB.01.CTR=0 ' + event
       if arch in ['IVB', 'HSW', 'BDW', 'SKL', 'SKX', 'KBL', 'CFL', 'CNL', 'ICL']: return 'D1.08 ' + event
       if arch in ['ZEN+']: return '064.70 ' + event
-      if arch in ['Cortex-A55']: return '03.00' + event  # L1D_CACHE_REFILL
+      if arch in ['Cortex-A55']: return '03.00 ' + event  # L1D_CACHE_REFILL
    if event == 'L2_HIT':
       if arch in ['Core', 'EnhancedCore']: return '29.7E ' + event # L2_LD.THIS_CORE.ALL_INCL.MES
       if arch in ['NHM', 'WSM']: return 'CB.02 ' + event
       if arch in ['SNB', 'IVB', 'HSW', 'BDW', 'SKL', 'SKX', 'KBL', 'CFL', 'CNL', 'ICL']: return 'D1.02 ' + event
       if arch in ['ZEN+']: return '064.70 ' + event
-      if arch in ['Cortex-A55']: return '16.17' + event # L2D_CACHE - L2D_CACHE_REFILL
+      if arch in ['Cortex-A55']: return '16.17 ' + event # L2D_CACHE - L2D_CACHE_REFILL
    if event == 'L2_MISS':
       if arch in ['Core', 'EnhancedCore']: return 'CB.04.CTR=0 ' + event
       if arch in ['IVB', 'HSW', 'BDW', 'SKL', 'SKX', 'KBL', 'CFL', 'CNL', 'ICL']: return 'D1.10 ' + event
       if arch in ['ZEN+']: return '064.08 ' + event
-      if arch in ['Cortex-A55']: return '17.00' + event # L2D_CACHE_REFILL
+      if arch in ['Cortex-A55']: return '17.00 ' + event # L2D_CACHE_REFILL
    if event == 'L3_HIT':
       if arch in ['NHM', 'WSM']: return 'CB.04 ' + event
       if arch in ['SNB', 'IVB', 'HSW', 'BDW', 'SKL', 'SKX', 'KBL', 'CFL', 'CNL', 'ICL']: return 'D1.04 ' + event
-      if arch in ['Cortex-A55']: return '2B.2A' + event # L3D_CACHE - L3D_CACHE_REFILL 
+      if arch in ['Cortex-A55']: return '2B.2A ' + event # L3D_CACHE - L3D_CACHE_REFILL 
    if event == 'L3_MISS':
       if arch in ['NHM', 'WSM']: return 'CB.10 ' + event
       if arch in ['SNB', 'IVB', 'HSW', 'BDW', 'SKL', 'SKX', 'KBL', 'CFL', 'CNL', 'ICL']: return 'D1.20 ' + event
-      if arch in ['Cortex-A55']: return '2A.00' + event # L3D_CACHE_REFILL
+      if arch in ['Cortex-A55']: return '2A.00 ' + event # L3D_CACHE_REFILL
    return ''
 
 def getDefaultCacheConfig():
