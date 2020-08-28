@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 
 def getActualHits(seq, level, cacheSets, cBox, cSlice, nMeasurements=10):
-   nb = runCacheExperiment(level, seq, cacheSets=cacheSets, cBox=cBox, cSlice=cSlice, clearHL=True, loop=1, wbinvd=True, nMeasurements=nMeasurements, agg='med')
+   nb = runCacheExperiment(level, seq, cacheSets=cacheSets, cBox=cBox, cSlice=cSlice, clearHL=True, loop=1, wbinvd=True, nMeasurements=nMeasurements, agg='med', using_adb=ADB_USING)
    return int(nb['L' + str(level) + '_HIT']+0.1)
 
 

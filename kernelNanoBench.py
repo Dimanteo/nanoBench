@@ -25,7 +25,7 @@ def assemble(code, objFile, asmFile='/tmp/ramdisk/asm.s'):
          code = '.arch armv8-a\n' + code + ';1:;\n'
          with open(asmFile, 'w') as f: f.write(code);
          # should add $NDK_DIR/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin to PATH variable
-         subprocess.check_call(['aarch64-linux-android-as', asmFile, '-o', objFile])
+         subprocess.check_call(['aarch64-linux-android-as', asmFile, '-o', objFile], shell=True)
    except subprocess.CalledProcessError as e:
       sys.stderr.write("Error (assemble): " + str(e))
       sys.stderr.write(code)
@@ -37,7 +37,7 @@ def objcopy(sourceFile, targetFile):
       if not USING_ADB:
          subprocess.check_call(['objcopy', sourceFile, '-O', 'binary', targetFile])
       else:
-         subprocess.check_call(['aarch64-linux-android-objcopy', sourceFile, '-O', 'binary', targetFile])
+         subprocess.check_call(['aarch64-linux-android-objcopy', sourceFile, '-O', 'binary', targetFile], shell=True)
    except subprocess.CalledProcessError as e:
       sys.stderr.write("Error (objcopy): " + str(e))
       exit(1)
@@ -63,7 +63,7 @@ def getR14Size():
 
 def adbPush(local, remote):
    try:
-      subprocess.check_call(['adb', 'push', local, remote])
+      subprocess.check_call(['adb', 'push', local, remote], shell=True)
    except subprocess.CalledProcessError as e:
       sys.stderr.write(str(e.returncode) + ' ADB could not push ' + local + ' to ' + remote + ' ' + '\n')
       raise e
@@ -71,7 +71,7 @@ def adbPush(local, remote):
 
 def adbPull(remote, local):
    try:
-      subprocess.check_call(['adb', 'pull', remote, local])
+      subprocess.check_call(['adb', 'pull', remote, local], shell=True)
    except subprocess.CalledProcessError as e:
       sys.stderr.write(str(e.returncode) + ' ADB could not pull ' + remote + ' to ' + local + '\n')
       raise e
@@ -79,7 +79,7 @@ def adbPull(remote, local):
 
 def adbExec(cmd):
    try:
-      output = subprocess.check_output(['adb', 'shell'] + cmd)
+      output = subprocess.check_output(['adb', 'shell'] + cmd, shell=True)
       return output
    except subprocess.CalledProcessError as e:
       query = ''
@@ -95,9 +95,7 @@ paramDict = dict()
 # Otherwise, reset() needs to be called first.
 def setNanoBenchParameters(config=None, configFile=None, msrConfig=None, msrConfigFile=None, nMeasurements=None, unrollCount=None, loopCount=None,
                            warmUpCount=None, initialWarmUpCount=None, alignmentOffset=0, codeOffset=0, aggregateFunction=None, basicMode=None, noMem=None,
-                           verbose=None, using_adb=False):
-   global USING_ADB
-   USING_ADB = using_adb
+                           verbose=None):      
 
    if not ramdiskCreated: createRamdisk()
 
@@ -106,7 +104,7 @@ def setNanoBenchParameters(config=None, configFile=None, msrConfig=None, msrConf
          configFile = '/tmp/ramdisk/config'
          writeFile(configFile, config)
          paramDict['config'] = config
-   if configFile is not None and not using_adb:
+   if configFile is not None and not USING_ADB:
       writeFile('/sys/nb/config', configFile)
 
    if msrConfig is not None:
@@ -114,78 +112,80 @@ def setNanoBenchParameters(config=None, configFile=None, msrConfig=None, msrConf
          msrConfigFile = '/tmp/ramdisk/msr_config'
          writeFile(msrConfigFile, msrConfig)
          paramDict['msrConfig'] = msrConfig
-   if msrConfigFile is not None and not using_adb:
+   if msrConfigFile is not None and not USING_ADB:
       writeFile('/sys/nb/msr_config', msrConfigFile)
 
    if nMeasurements is not None:
       if paramDict.get('nMeasurements', None) != nMeasurements:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/n_measurements', str(nMeasurements))
          paramDict['nMeasurements'] = nMeasurements
 
    if unrollCount is not None:
       if paramDict.get('unrollCount', None) != unrollCount:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/unroll_count', str(unrollCount))
          paramDict['unrollCount'] = unrollCount
 
    if loopCount is not None:
       if paramDict.get('loopCount', None) != loopCount:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/loop_count', str(loopCount))
          paramDict['loopCount'] = loopCount
 
    if warmUpCount is not None:
       if paramDict.get('warmUpCount', None) != warmUpCount:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/warm_up', str(warmUpCount))
          paramDict['warmUpCount'] = warmUpCount
 
    if initialWarmUpCount is not None:
       if paramDict.get('initialWarmUpCount', None) != initialWarmUpCount:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/initial_warm_up', str(initialWarmUpCount))
          paramDict['initialWarmUpCount'] = initialWarmUpCount
 
    if alignmentOffset is not None:
       if paramDict.get('alignmentOffset', None) != alignmentOffset:
-         if not using_adb:            
+         if not USING_ADB:            
             writeFile('/sys/nb/alignment_offset', str(alignmentOffset))
          paramDict['alignmentOffset'] = alignmentOffset
 
    if codeOffset is not None:
       if paramDict.get('codeOffset', None) != codeOffset:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/code_offset', str(codeOffset))
          paramDict['codeOffset'] = codeOffset
 
    if aggregateFunction is not None:
       if paramDict.get('aggregateFunction', None) != aggregateFunction:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/agg', aggregateFunction)
          paramDict['aggregateFunction'] = aggregateFunction
 
    if basicMode is not None:
       if paramDict.get('basicMode', None) != basicMode:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/basic_mode', str(int(basicMode)))
          paramDict['basicMode'] = basicMode
 
    if noMem is not None:
       if paramDict.get('noMem', None) != noMem:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/no_mem', str(int(noMem)))
          paramDict['noMem'] = noMem
 
    if verbose is not None:
       if paramDict.get('verbose', None) != verbose:
-         if not using_adb:
+         if not USING_ADB:
             writeFile('/sys/nb/verbose', str(int(verbose)))
          paramDict['verbose'] = verbose
 
 
-def resetNanoBench():
-   if not USING_ADB:
+def resetNanoBench(using_adb):
+   global USING_ADB
+   USING_ADB = using_adb
+   if not using_adb:
       with open('/sys/nb/reset') as resetFile: resetFile.read()
    paramDict.clear()
 

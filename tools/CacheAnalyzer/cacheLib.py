@@ -517,10 +517,10 @@ def getCodeForCacheExperiment(level, seq, initSeq, cacheSetList, cBox, cSlice, c
    return getCodeForAddressLists(seqAddressLists, initAddressLists, wbinvd)
 
 
-def runCacheExperimentCode(code, initCode, oneTimeInitCode, loop, warmUpCount, codeOffset, nMeasurements, agg):
-   resetNanoBench()
+def runCacheExperimentCode(code, initCode, oneTimeInitCode, loop, warmUpCount, codeOffset, nMeasurements, agg, using_adb):
+   resetNanoBench(using_adb)
    setNanoBenchParameters(config=getDefaultCacheConfig(), msrConfig=getDefaultCacheMSRConfig(), nMeasurements=nMeasurements, unrollCount=1, loopCount=loop,
-                          warmUpCount=warmUpCount, aggregateFunction=agg, basicMode=True, noMem=True, codeOffset=codeOffset, verbose=None, using_adb=ADB_USING)
+                          warmUpCount=warmUpCount, aggregateFunction=agg, basicMode=True, noMem=True, codeOffset=codeOffset, verbose=None)
    return runNanoBench(code=code, init=initCode, oneTimeInit=oneTimeInitCode)
 
 
@@ -530,7 +530,9 @@ def runCacheExperimentCode(code, initCode, oneTimeInitCode, loop, warmUpCount, c
 # doNotUseOtherCBoxes determines whether accesses to clear higher levels will go to other CBoxes
 # if wbinvd is set, wbinvd will be called before initSeq
 def runCacheExperiment(level, seq, initSeq='', cacheSets=None, cBox=1, cSlice=0, clearHL=True, doNotUseOtherCBoxes=False, loop=1, wbinvd=False,
-                       nMeasurements=10, warmUpCount=1, codeSet=None, agg='avg', nClearAddresses=None):
+                       nMeasurements=10, warmUpCount=1, codeSet=None, agg='avg', nClearAddresses=None, using_adb=False):
+   global ADB_USING
+   ADB_USING = using_adb
    cacheSetList = parseCacheSetsStr(level, clearHL, cacheSets, doNotUseOtherCBoxes)
    ec = getCodeForCacheExperiment(level, seq, initSeq=initSeq, cacheSetList=cacheSetList, cBox=cBox, cSlice=cSlice, clearHL=clearHL,
                                   doNotUseOtherCBoxes=doNotUseOtherCBoxes, wbinvd=wbinvd, nClearAddresses=nClearAddresses)
@@ -543,7 +545,7 @@ def runCacheExperiment(level, seq, initSeq='', cacheSets=None, cBox=1, cSlice=0,
    allUsedSets = getAllUsedCacheSets(cacheSetList, seq, initSeq)
    codeOffset = lineSize * (codeSet if codeSet is not None else findCacheSetForCode(allUsedSets, level))
 
-   return runCacheExperimentCode(ec.code, ec.init, ec.oneTimeInit, loop, warmUpCount, codeOffset, nMeasurements, agg)
+   return runCacheExperimentCode(ec.code, ec.init, ec.oneTimeInit, loop, warmUpCount, codeOffset, nMeasurements, agg, using_adb)
 
 
 def printNB(nb_result):
