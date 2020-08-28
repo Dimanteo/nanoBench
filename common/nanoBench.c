@@ -507,7 +507,11 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
             size_t nFill = (64 - ((uintptr_t)&runtime_code[rcI+dist] % 64)) % 64;
             nFill += alignment_offset;
             for (size_t i=0; i<nFill; i++) {
-                runtime_code[rcI] = NOP_BYTES;
+                #if !defined(__aarch64__)
+                    runtime_code[rcI] = NOP_BYTES;
+                #else
+                    *(int32_t*)(&runtime_code[rcI]) = NOP_BYTES;
+                #endif
                 rcI += sizeof(NOP_BYTES);
             }
         } else if (starts_with_magic_bytes(&measurement_template[templateI], MAGIC_BYTES_PFC_START)) {
@@ -803,7 +807,7 @@ int setup_perf_event() {
 
     int fd = 0;
 
-    if (fd = perf_event_open(&event, 0, -1, -1, 0) < 0) {
+    if ((fd = perf_event_open(&event, 0, -1, -1, 0)) < 0) {
         print_error("Error in perf_event_open. You may need to change perf_event_paranoid.");
         exit(1);
     }
@@ -840,6 +844,7 @@ void run_perf_experiment(char* measurement_template, int64_t* results[], long lo
         // ignore "warm-up" runs (ri<0), but don't execute different branches
         long ri_ = (ri>=0) ? ri : 0;
         read(fd, results[ri_], (n_pfc_configs + 1) * sizeof(uint64_t));
+        //fprintf(stderr, "N: %d; Event 1: %d", results[ri_][0], results[ri_][1]);
     }
 
     if (ioctl(fd, PERF_EVENT_IOC_DISABLE, PERF_IOC_FLAG_GROUP) < 0) {
@@ -857,7 +862,7 @@ void print_all_perf_measurement_results(int64_t* results[]) {
     sprintf(buf, "\tevt_num%*s", run_padding, "");
     for (int c = 0; c < n_pfc_configs; c++) {
         sprintf(buf + strlen(buf), "       %c%#X", 
-            pfc_configs[c].sub_evt ? '-' : " ",
+            pfc_configs[c].sub_evt ? '-' : ' ',
             pfc_configs[c].evt_num);
     }
     print_verbose("%s\n", buf);

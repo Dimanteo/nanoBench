@@ -32,6 +32,7 @@
     #include <sys/syscall.h>
     #include <sys/ioctl.h>
     #include <linux/perf_event.h>
+    #include <unistd.h>
 #endif
 
 #ifdef __KERNEL__
