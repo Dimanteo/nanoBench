@@ -250,11 +250,11 @@ void print_all_measurement_results(int64_t* results[], int n_counters);
 
 #ifdef __aarch64__
     long perf_event_open(void* attr, pid_t pid, int cpu, int groupfd, unsigned long flags);
-    int setup_perf_event();
-    void run_perf_experiment(char* measurement_template, int64_t* results[], long local_unroll_count, long local_loop_count, int fd);
-    void print_all_perf_measurement_results(int64_t* results[]);
-    void compute_perf_result_agg_100(int64_t* results[], int64_t* agg_results);
-    void dump_perf_result(const char* filename);
+    int setup_perf_event(size_t start, size_t end);
+    void run_perf_experiment(char* measurement_template, int64_t* results[], size_t n_counters, long local_unroll_count, long local_loop_count, int fd);
+    void print_all_perf_measurement_results(int64_t* results[], size_t start, size_t end);
+    void compute_perf_result_agg_100(int64_t* results[], int64_t* agg_results, size_t start, size_t end);
+    void dump_perf_result(const char* filename, size_t start, size_t end);
 #endif
 
 #define MAGIC_BYTES_INIT 0x10b513b1C2813F04

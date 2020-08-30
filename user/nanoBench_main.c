@@ -320,18 +320,33 @@ int main(int argc, char **argv) {
         printf("%s", compute_result_str(buf, sizeof(buf), "Core cycles", 2));
         printf("%s", compute_result_str(buf, sizeof(buf), "Reference cycles", 3));
     } else {
-        int fd = setup_perf_event();
-        run_perf_experiment(measurement_template, measurement_results_base, base_unroll_count, base_loop_count, fd);
-        run_perf_experiment(measurement_template, measurement_results, main_unroll_count,main_loop_count, fd);
-        
-        if (verbose) {
-            printf("\nBase measurement results (unroll_count=%ld, loop_count=%ld):\n\n", base_unroll_count, base_loop_count);
-            print_all_perf_measurement_results(measurement_results_base);
-            printf("Main measurement results (unroll_count=%ld, loop_count=%ld):\n\n", main_unroll_count, main_loop_count);
-            print_all_perf_measurement_results(measurement_results);
-        }
+        n_programmable_counters = MAX_PROGRAMMABLE_COUNTERS;
 
-        dump_perf_result(output_file_name);
+        FILE* output_file = fopen(output_file_name, "wb");
+        fclose(output_file);
+
+        for (size_t i = 0; i < n_pfc_configs; i += n_programmable_counters)
+        {
+            size_t end = i + n_programmable_counters;
+            if (end > n_pfc_configs)
+            {
+                end = n_pfc_configs;
+            }
+            size_t local_n_counters = end - i;
+
+            int fd = setup_perf_event(i, end);
+            run_perf_experiment(measurement_template, measurement_results_base, local_n_counters, base_unroll_count, base_loop_count, fd);
+            run_perf_experiment(measurement_template, measurement_results, local_n_counters, main_unroll_count, main_loop_count, fd);
+            
+            if (verbose) {
+                printf("\nBase measurement results (unroll_count=%ld, loop_count=%ld):\n\n", base_unroll_count, base_loop_count);
+                print_all_perf_measurement_results(measurement_results_base, i, end);
+                printf("Main measurement results (unroll_count=%ld, loop_count=%ld):\n\n", main_unroll_count, main_loop_count);
+                print_all_perf_measurement_results(measurement_results, i, end);
+            }
+
+            dump_perf_result(output_file_name, i, end);
+        }
     }
 
     /*************************************
