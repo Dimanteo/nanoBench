@@ -197,7 +197,7 @@ def addToQuery(query, param, option, has_value=False):
    if param in paramDict:
       if has_value:
          query += [option, str(paramDict[param])]
-      else:
+      elif paramDict[param]:
          query += [option]
 
 
