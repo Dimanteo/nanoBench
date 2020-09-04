@@ -55,7 +55,9 @@ def filecopy(sourceFile, targetFile):
 
 
 # Returns the size in bytes.
-def getR14Size():
+def getR14Size(using_adb):
+   if using_adb:
+      return 1000 * 1024 * 1024     # placeholder
    if not hasattr(getR14Size, 'r14Size'):
       with open('/sys/nb/r14_size') as f:
          line = f.readline()

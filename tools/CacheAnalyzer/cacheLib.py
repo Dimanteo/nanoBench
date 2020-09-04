@@ -275,7 +275,7 @@ def getCodeForAddressLists(codeAddressLists, initAddressLists=[], wbinvd=False, 
    init = (['wbinvd; '] if wbinvd and not ADB_USING else [])
    oneTimeInit = []
 
-   r14Size = getR14Size()
+   r14Size = getR14Size(ADB_USING)
    alreadyAddedOneTimeInits = set()
 
    for addressLists, codeList, isInit in [(initAddressLists, init, True), (codeAddressLists, code, False)]:
