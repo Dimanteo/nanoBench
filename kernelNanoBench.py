@@ -300,7 +300,7 @@ def runNanoBench(code='', codeObjFile=None, codeBinFile=None,
       counter = line_split[0].strip()
       value = float(line_split[1].strip())
       ret[counter] = value
-
+   print(ret)
    return ret
 
 

@@ -828,6 +828,8 @@ int setup_perf_event(size_t start, size_t end) {
     return fd;
 }
 
+long test_hit_counters(long local_unroll_count);
+
 void run_perf_experiment(char* measurement_template, int64_t* results[], size_t n_counters, long local_unroll_count, long local_loop_count, int fd) {
     create_runtime_code(measurement_template, local_unroll_count, local_loop_count);
 
@@ -835,17 +837,19 @@ void run_perf_experiment(char* measurement_template, int64_t* results[], size_t 
         print_error("ioctl failed. Can't enable perf counting.");
         exit(1);
     }
-
+    long dummy = 0;
     for (long ri=-warm_up_count; ri<n_measurements; ri++) {
         if (ioctl(fd, PERF_EVENT_IOC_RESET, PERF_IOC_FLAG_GROUP) < 0) {
             print_error("ioctl failed. Can't reset perf counters.");
             exit(1);
         }
-        ((void(*)(void))runtime_code)();
+        //((void(*)(void))runtime_code)();
+        dummy = test_hit_counters(local_unroll_count);
 
         // ignore "warm-up" runs (ri<0), but don't execute different branches
         long ri_ = (ri>=0) ? ri : 0;
         read(fd, results[ri_], (n_counters + 1) * sizeof(uint64_t));
+        print_error("**Dummy = %ld\n", dummy);
     }
 
     if (ioctl(fd, PERF_EVENT_IOC_DISABLE, PERF_IOC_FLAG_GROUP) < 0) {
@@ -919,6 +923,7 @@ void dump_perf_result(const char* filename, size_t start, size_t end) {
                 continue;
             }
             int64_t result = ((agg[c] - agg_base[c]) + n_rep / 2) / n_rep;
+            print_error("[%d] %d - %d = %d", c, agg[c], agg_base[c], result);
             fprintf(file, "%s: %s%lld.%.2lld\n", pfc_configs[c].description, (result<0?"-":""), ll_abs(result/100), ll_abs(result)%100);
         }
 
@@ -1739,6 +1744,25 @@ void measurement_template_AARCH64() {
     );
     RESTORE_REGS_FLAGS();
     asm(".quad "STRINGIFY(MAGIC_BYTES_TEMPLATE_END));
+}
+static int cacheTester[1000][4096];
+long test_hit_counters(long local_unroll_count) {
+    if (local_unroll_count == 0)
+        return 0;
+    for (int i = 0; i < 1000; i++)
+    {
+        for (int j = 0; j < 4096; j++)
+        {
+            cacheTester[i][j] = i * j;
+        }
+        
+    }
+    long dummy = 0;
+    for (int i = 0; i < 1000; i++)
+    {
+        dummy += cacheTester[i][0];   
+    }
+    return dummy;
 }
 #endif
 
