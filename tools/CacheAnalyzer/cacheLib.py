@@ -313,7 +313,7 @@ def getCodeForAddressLists(codeAddressLists, initAddressLists=[], wbinvd=False, 
          if not ADB_USING:
             codeList.append('lfence; ' * 25)
          else:
-            codeList.append('dsb sy; ' * 25)
+            codeList.append('dsb sy; ')
 
          if addressList.flush:
             for address in addresses:

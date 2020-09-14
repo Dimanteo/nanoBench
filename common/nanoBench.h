@@ -280,6 +280,10 @@ void print_all_measurement_results(int64_t* results[], int n_counters);
 #else
     #define RET_BYTES 0xd65f03c0
     #define NOP_BYTES 0xd503201f
+    #define MAKE_MOVK(imm, shift, xd) (int32_t)(xd + (imm << 5) + ((shift / 16) << 21) + 0xF2800000)
+    #define MAKE_MOV(imm, shift, xd)  (int32_t)(xd + (imm << 5) + ((shift / 16) << 21) + 0xD2800000)
+    #define MASK16_FROM64(value, hex1, hex2, hex3, hex4, shift) (((int64_t)value & \
+        0x##hex1##hex1##hex1##hex1##hex2##hex2##hex2##hex2##hex3##hex3##hex3##hex3##hex4##hex4##hex4##hex4) >> shift)
 #endif
 
 #define STRINGIFY2(X) #X
@@ -353,17 +357,18 @@ void one_time_init_template(void);
 #else // if __aarch64__
 // x19-x29 are callee saved and x30 is a link register (https://en.wikipedia.org/wiki/Calling_convention#ARM_(A64))
 // Flags stored in NZCV system register (https://developer.arm.com/docs/ddi0595/h/aarch64-system-registers/nzcv)
-#define SAVE_REGS_FLAGS()               \
-    asm volatile(                       \
-        "mrs x0, NZCV\n"                \
-        "stp x0,  x19, [sp, #-16]!\n"   \
-        "stp x20, x21, [sp, #-16]!\n"   \
-        "stp x22, x23, [sp, #-16]!\n"   \
-        "stp x24, x25, [sp, #-16]!\n"   \
-        "stp x26, x27, [sp, #-16]!\n"   \
-        "stp x28, x29, [sp, #-16]!\n"   \
-        "stp x30, xzr, [sp, #-16]!\n"   \
-        :::"x0"                         \
+#define SAVE_REGS_FLAGS()                                   \
+    asm volatile(                                           \
+        "mrs x0, NZCV\n"                                    \
+        "stp x0,  x19, [sp, #-16]!\n"                       \
+        "stp x20, x21, [sp, #-16]!\n"                       \
+        "stp x22, x23, [sp, #-16]!\n"                       \
+        "stp x24, x25, [sp, #-16]!\n"                       \
+        "stp x26, x27, [sp, #-16]!\n"                       \
+        "stp x28, x29, [sp, #-16]!\n"                       \
+        "stp x30, xzr, [sp, #-16]!\n"                       \
+        ".quad "STRINGIFY(MAGIC_BYTES_RUNTIME_R14)"\n"      \
+        :::"x0"                                             \
     );
 
 #define RESTORE_REGS_FLAGS()        \

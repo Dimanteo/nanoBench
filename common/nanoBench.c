@@ -588,8 +588,28 @@ void create_runtime_code(char* measurement_template, long local_unroll_count, lo
             *(void**)(&runtime_code[rcI]) = &RSP_mem;
             templateI += 8; rcI += 8;
         } else if (starts_with_magic_bytes(&measurement_template[templateI], MAGIC_BYTES_RUNTIME_R14)) {
-            *(void**)(&runtime_code[rcI]) = runtime_r14;
-            templateI += 8; rcI += 8;
+            #if !defined(__aarch64__)
+                *(void**)(&runtime_code[rcI]) = runtime_r14;
+                templateI += 8; rcI += 8;
+            #else
+                // mov x14, runtime_r14:b[0-15]
+                int16_t immediate = MASK16_FROM64(runtime_r14, 0, 0, 0, F, 0);
+                *(int32_t*)(&runtime_code[rcI]) = MAKE_MOV(immediate, 0, 14);
+                rcI += 4;
+                // movk x14, runtime_r14:b[31-16]
+                immediate = MASK16_FROM64(runtime_r14, 0, 0, F, 0, 16);
+                *(int32_t*)(&runtime_code[rcI]) = MAKE_MOVK(immediate, 16, 14);
+                rcI += 4;
+                // movk x14, runtime_r14:b[47-32]
+                immediate = MASK16_FROM64(runtime_r14, 0, F, 0, 0, 32);
+                *(int32_t*)(&runtime_code[rcI]) = MAKE_MOVK(immediate, 32, 14);
+                rcI += 4;
+                // movk x14, runtime_r14:b[63-48]
+                immediate = MASK16_FROM64(runtime_r14, F, 0, 0, 0, 48);
+                *(int32_t*)(&runtime_code[rcI]) = MAKE_MOVK(immediate, 48, 14);
+                rcI += 4;
+                templateI += 8;
+            #endif
         } else if (starts_with_magic_bytes(&measurement_template[templateI], MAGIC_BYTES_RUNTIME_RBP)) {
             *(void**)(&runtime_code[rcI]) = runtime_rbp;
             templateI += 8; rcI += 8;
@@ -636,8 +656,28 @@ void create_and_run_one_time_init_code() {
             *(void**)(&runtime_one_time_init_code[rcI]) = &RSP_mem;
             templateI += 8; rcI += 8;
         } else if (starts_with_magic_bytes(&template[templateI], MAGIC_BYTES_RUNTIME_R14)) {
-            *(void**)(&runtime_one_time_init_code[rcI]) = runtime_r14;
-            templateI += 8; rcI += 8;
+            #if !defined(__arch64__)
+                *(void**)(&runtime_one_time_init_code[rcI]) = runtime_r14;
+                templateI += 8; rcI += 8;
+            #else
+                // mov x14, runtime_r14:b[0-15]
+                int16_t immediate = MASK16_FROM64(runtime_r14, 0, 0, 0, F, 0);
+                *(int32_t*)(&runtime_code[rcI]) = MAKE_MOV(immediate, 0, 14);
+                rcI += 4;
+                // movk x14, runtime_r14:b[31-16]
+                immediate = MASK16_FROM64(runtime_r14, 0, 0, F, 0, 16);
+                *(int32_t*)(&runtime_code[rcI]) = MAKE_MOVK(immediate, 16, 14);
+                rcI += 4;
+                // movk x14, runtime_r14:b[47-32]
+                immediate = MASK16_FROM64(runtime_r14, 0, F, 0, 0, 32);
+                *(int32_t*)(&runtime_code[rcI]) = MAKE_MOVK(immediate, 32, 14);
+                rcI += 4;
+                // movk x14, runtime_r14:b[63-48]
+                immediate = MASK16_FROM64(runtime_r14, F, 0, 0, 0, 48);
+                *(int32_t*)(&runtime_code[rcI]) = MAKE_MOVK(immediate, 48, 14);
+                rcI += 4;
+                templateI += 8;
+            #endif
         } else if (starts_with_magic_bytes(&template[templateI], MAGIC_BYTES_RUNTIME_RBP)) {
             *(void**)(&runtime_one_time_init_code[rcI]) = runtime_rbp;
             templateI += 8; rcI += 8;
@@ -828,7 +868,6 @@ int setup_perf_event(size_t start, size_t end) {
     return fd;
 }
 
-long test_hit_counters(long local_unroll_count);
 
 void run_perf_experiment(char* measurement_template, int64_t* results[], size_t n_counters, long local_unroll_count, long local_loop_count, int fd) {
     create_runtime_code(measurement_template, local_unroll_count, local_loop_count);
@@ -837,19 +876,18 @@ void run_perf_experiment(char* measurement_template, int64_t* results[], size_t 
         print_error("ioctl failed. Can't enable perf counting.");
         exit(1);
     }
-    long dummy = 0;
+    print_error("runtime_r14: %p\n", runtime_r14);
     for (long ri=-warm_up_count; ri<n_measurements; ri++) {
         if (ioctl(fd, PERF_EVENT_IOC_RESET, PERF_IOC_FLAG_GROUP) < 0) {
             print_error("ioctl failed. Can't reset perf counters.");
             exit(1);
         }
-        //((void(*)(void))runtime_code)();
-        dummy = test_hit_counters(local_unroll_count);
+
+        ((void(*)(void))runtime_code)();
 
         // ignore "warm-up" runs (ri<0), but don't execute different branches
         long ri_ = (ri>=0) ? ri : 0;
         read(fd, results[ri_], (n_counters + 1) * sizeof(uint64_t));
-        print_error("**Dummy = %ld\n", dummy);
     }
 
     if (ioctl(fd, PERF_EVENT_IOC_DISABLE, PERF_IOC_FLAG_GROUP) < 0) {
@@ -1744,25 +1782,6 @@ void measurement_template_AARCH64() {
     );
     RESTORE_REGS_FLAGS();
     asm(".quad "STRINGIFY(MAGIC_BYTES_TEMPLATE_END));
-}
-static int cacheTester[1000][4096];
-long test_hit_counters(long local_unroll_count) {
-    if (local_unroll_count == 0)
-        return 0;
-    for (int i = 0; i < 1000; i++)
-    {
-        for (int j = 0; j < 4096; j++)
-        {
-            cacheTester[i][j] = i * j;
-        }
-        
-    }
-    long dummy = 0;
-    for (int i = 0; i < 1000; i++)
-    {
-        dummy += cacheTester[i][0];   
-    }
-    return dummy;
 }
 #endif
 
