@@ -41,11 +41,14 @@ def findSmallCounterexample(policy, initSeq, level, sets, cBox, cSlice, assoc, s
 
 def getRandomSeq(n):
    seq = [0]
-   seqAct = ['']
+   seqAct = ['' if not ADB_USING else '?']
    for _ in range(0,n):
       if random.choice([True, False]):
          seq.append(max(seq)+1)
-         seqAct.append('')
+         if not ADB_USING:
+            seqAct.append('')
+         else:
+            seqAct.append('?')
       else:
          seq.append(random.choice(seq))
          if random.randint(0,8)==0:
